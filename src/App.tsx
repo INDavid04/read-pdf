@@ -519,9 +519,6 @@ function App() {
         {/* Top bar */}
         <header className="app-header">
           <div className="brand">
-            <div className="brand-icon">
-              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
-            </div>
             <span>read-pdf</span>
           </div>
           <div className="header-actions">
@@ -634,9 +631,6 @@ function App() {
         {/* Top Control Bar - Unifed to look exactly like Dashboard Navbar */}
         <header className="reader-topbar app-header">
           <div className="brand clickable" onClick={handleBackToDashboard} title="Mergi înapoi la Dashboard">
-            <div className="brand-icon">
-              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
-            </div>
             <span>read-pdf</span>
           </div>
 
@@ -672,14 +666,6 @@ function App() {
           </div>
 
           <div className="reader-topbar-right header-actions">
-            <button 
-              className={`btn ${isBionic ? 'btn-primary' : ''}`} 
-              onClick={toggleBionic}
-              title="Activează formatul de citire bionică"
-              style={{ borderRadius: '24px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-            >
-              🧠 Citire Bionică
-            </button>
             <button className="btn settings-trigger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
@@ -846,25 +832,45 @@ function App() {
               </div>
 
               <div className="settings-section">
-                <span className="settings-label">Distanțiere Linii</span>
-                <div className="choice-grid">
-                  <button 
-                    className={`btn ${lineSpacing === 1.4 ? 'btn-primary' : ''}`} 
-                    onClick={() => setLineSpacing(1.4)}
-                  >
-                    Compactă
-                  </button>
-                  <button 
-                    className={`btn ${lineSpacing === 1.65 ? 'btn-primary' : ''}`} 
-                    onClick={() => setLineSpacing(1.65)}
-                  >
-                    Normală
-                  </button>
-                </div>
+                <span className="settings-label">Citire Bionică</span>
+                <button 
+                  className={`btn ${isBionic ? 'btn-primary' : ''}`} 
+                  onClick={toggleBionic}
+                  style={{ width: '100%', height: '38px' }}
+                >
+                  {isBionic ? '🧠 Activată' : 'Dezactivată'}
+                </button>
               </div>
             </div>
 
-            {/* 5. Font Style Selector */}
+            {/* 5. Font Style Selector & Line Spacing */}
+            <div className="settings-section">
+              <span className="settings-label">Distanțiere Linii</span>
+              <div className="choice-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                <button 
+                  className={`btn ${lineSpacing === 1.4 ? 'btn-primary' : ''}`} 
+                  onClick={() => setLineSpacing(1.4)}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
+                >
+                  Compactă
+                </button>
+                <button 
+                  className={`btn ${lineSpacing === 1.65 ? 'btn-primary' : ''}`} 
+                  onClick={() => setLineSpacing(1.65)}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
+                >
+                  Normală
+                </button>
+                <button 
+                  className={`btn ${lineSpacing === 2.0 ? 'btn-primary' : ''}`} 
+                  onClick={() => setLineSpacing(2.0)}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
+                >
+                  Aerisită
+                </button>
+              </div>
+            </div>
+
             <div className="settings-section">
               <span className="settings-label">Tip Font Text</span>
               <div className="font-family-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
