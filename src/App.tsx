@@ -506,7 +506,7 @@ function App() {
         <header className="app-header">
           <div className="brand">
             <div className="brand-icon">
-              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
+              <img src="/public/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
             </div>
             <span>read-pdf</span>
           </div>
