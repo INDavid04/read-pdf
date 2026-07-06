@@ -1,5 +1,7 @@
 # React + TypeScript + Vite
 
+Live at: [indavid04.github.io/read-pdf/](indavid04.github.io/read-pdf/)
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
