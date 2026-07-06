@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { parsePdfFile } from './utils/pdfParser';
 import type { ParsedPDF } from './utils/pdfParser';
 import { renderBionicParagraph } from './utils/bionic';
+import { saveParsedPDF, getParsedPDF, deleteParsedPDF } from './utils/db';
 import './App.css';
 
 interface BookMetadata {
@@ -26,6 +27,7 @@ function App() {
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
+  const [activeBookId, setActiveBookId] = useState<string | null>(null);
 
   // --- SETTINGS STATE ---
   const [theme, setTheme] = useState<string>('sepia');
@@ -33,8 +35,11 @@ function App() {
   const [lineSpacing, setLineSpacing] = useState<number>(1.65);
   const [fontFamily, setFontFamily] = useState<string>('serif');
   const [isBionic, setIsBionic] = useState<boolean>(false);
+  const [isProcessingBionic, setIsProcessingBionic] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
+  const [layoutMode, setLayoutMode] = useState<'scroll' | 'page'>('scroll');
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // --- PROFILE & SYNC STATE ---
   const [userProfile, setUserProfile] = useState<UserProfile>({
@@ -47,13 +52,6 @@ function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [tempProfileName, setTempProfileName] = useState('');
 
-  // --- TTS (TEXT-TO-SPEECH) STATE ---
-  const [ttsIsSpeaking, setTtsIsSpeaking] = useState(false);
-  const [ttsIsPaused, setTtsIsPaused] = useState(false);
-  const [ttsRate, setTtsRate] = useState<number>(1);
-  const [ttsCurrentParagraphId, setTtsCurrentParagraphId] = useState<string | null>(null);
-  const ttsNextIndexRef = useRef<number>(0);
-
   // --- READER SCROLL STATE ---
   const [scrollPercentage, setScrollPercentage] = useState(0);
   const readerMainRef = useRef<HTMLDivElement>(null);
@@ -63,16 +61,13 @@ function App() {
   // INITIAL LOADING & SYNC LOGIC
   // --------------------------------------------------------------------------
   useEffect(() => {
-    // Load profile from localStorage
+    // 1. Load profile from localStorage
     const savedProfile = localStorage.getItem('pdf_reader_profile');
     if (savedProfile) {
       try {
         const parsed = JSON.parse(savedProfile);
         setUserProfile(parsed);
         setTempProfileName(parsed.name);
-        if (parsed.preferredTheme) {
-          setTheme(parsed.preferredTheme);
-        }
       } catch (e) {
         console.error('Failed to parse local profile', e);
       }
@@ -80,17 +75,19 @@ function App() {
       setTempProfileName('Cititor Pasionat');
     }
 
-    // Load recent books metadata from localStorage
+    // 2. Load recent books metadata from localStorage
+    let recents: BookMetadata[] = [];
     const savedRecent = localStorage.getItem('pdf_reader_recent_books');
     if (savedRecent) {
       try {
-        setRecentBooks(JSON.parse(savedRecent));
+        recents = JSON.parse(savedRecent);
+        setRecentBooks(recents);
       } catch (e) {
         console.error('Failed to parse recent books', e);
       }
     }
 
-    // Load reading settings from localStorage
+    // 3. Load reading settings from localStorage
     const savedSettings = localStorage.getItem('pdf_reader_settings');
     if (savedSettings) {
       try {
@@ -99,28 +96,102 @@ function App() {
         if (settings.lineSpacing) setLineSpacing(settings.lineSpacing);
         if (settings.fontFamily) setFontFamily(settings.fontFamily);
         if (settings.isBionic !== undefined) setIsBionic(settings.isBionic);
+        if (settings.layoutMode !== undefined) setLayoutMode(settings.layoutMode);
       } catch (e) {
         console.error('Failed to parse settings', e);
       }
     }
+
+    // 4. Load theme
+    const savedTheme = localStorage.getItem('pdf_reader_theme');
+    if (savedTheme) {
+      setTheme(savedTheme);
+    }
+
+    // 5. Load active book from IndexedDB if exists
+    const savedActiveId = localStorage.getItem('pdf_reader_active_book_id');
+    if (savedActiveId && recents.some(b => b.id === savedActiveId)) {
+      setActiveBookId(savedActiveId);
+      loadBookOnStartup(savedActiveId, recents);
+    }
   }, []);
+
+  const loadBookOnStartup = async (id: string, recentsList: BookMetadata[]) => {
+    setIsParsing(true);
+    setParseProgress(0);
+    try {
+      const bookData = await getParsedPDF(id);
+      if (bookData) {
+        setParsedPdf(bookData);
+        
+        // Restore last active paragraph and scroll or page position
+        const metadata = recentsList.find(b => b.id === id);
+        if (metadata) {
+          setScrollPercentage(metadata.progressPercentage || 0);
+          if (metadata.lastActiveParagraphId) {
+            const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
+            if (p) {
+              setCurrentPage(p.pageNumber);
+              
+              // Scroll in scroll mode after a brief timeout
+              setTimeout(() => {
+                if (readerMainRef.current) {
+                  const element = paragraphRefs.current[p.id];
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'auto', block: 'center' });
+                  }
+                }
+              }, 500);
+            }
+          }
+        }
+      } else {
+        localStorage.removeItem('pdf_reader_active_book_id');
+        setActiveBookId(null);
+      }
+    } catch (e) {
+      console.error('Failed to load active book on startup', e);
+    } finally {
+      setIsParsing(false);
+    }
+  };
 
   // Sync settings back to localStorage whenever they change
   useEffect(() => {
-    const settings = { fontSize, lineSpacing, fontFamily, isBionic };
+    const settings = { fontSize, lineSpacing, fontFamily, isBionic, layoutMode };
     localStorage.setItem('pdf_reader_settings', JSON.stringify(settings));
-  }, [fontSize, lineSpacing, fontFamily, isBionic]);
+  }, [fontSize, lineSpacing, fontFamily, isBionic, layoutMode]);
 
   // Sync theme to the html/body element
   useEffect(() => {
     document.body.className = '';
     document.body.classList.add(`theme-${theme}`);
-    
-    // Save updated preferred theme in user profile
-    const updatedProfile = { ...userProfile, preferredTheme: theme };
-    setUserProfile(updatedProfile);
-    localStorage.setItem('pdf_reader_profile', JSON.stringify(updatedProfile));
+    localStorage.setItem('pdf_reader_theme', theme);
   }, [theme]);
+
+  // Handle page turn shortcuts in page mode
+  useEffect(() => {
+    if (!parsedPdf || layoutMode !== 'page') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if editing user profile in modal
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        goToNextPage();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        goToPrevPage();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [parsedPdf, layoutMode, currentPage]);
 
   // --------------------------------------------------------------------------
   // PARSING PDF FILE
@@ -139,13 +210,14 @@ function App() {
         setParseProgress(progress);
       });
 
-      setParsedPdf(parsed);
-      setIsParsing(false);
+      const bookId = `book-${Date.now()}`;
+      
+      // Save full parsed PDF to IndexedDB for quick persistent loading
+      await saveParsedPDF(bookId, parsed);
 
-      // Check if this book is already in recent books list to restore progress
+      // Check if this book title is already in recent books list to restore progress (optional merge)
       const existingBook = recentBooks.find(b => b.title === parsed.title);
       
-      // Update or insert book in local history
       const now = new Date().toLocaleDateString('ro-RO', {
         day: 'numeric',
         month: 'short',
@@ -156,28 +228,34 @@ function App() {
 
       let updatedRecents: BookMetadata[] = [];
       if (existingBook) {
-        // Move to the top of list
+        // Move to the top of list, reuse ID to avoid duplicate store entries
         updatedRecents = [
           {
             ...existingBook,
             lastReadDate: now,
           },
-          ...recentBooks.filter(b => b.title !== parsed.title)
+          ...recentBooks.filter(b => b.id !== existingBook.id)
         ];
         
-        // Restore scroll position after DOM rendering
+        setActiveBookId(existingBook.id);
+        localStorage.setItem('pdf_reader_active_book_id', existingBook.id);
+        setParsedPdf(parsed);
+
+        // Delete the redundant newly generated DB entry since we reuse the existing one
+        await deleteParsedPDF(bookId);
+
+        // Restore position
         setTimeout(() => {
           if (existingBook.lastActiveParagraphId && readerMainRef.current) {
             const element = paragraphRefs.current[existingBook.lastActiveParagraphId];
             if (element) {
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              setTtsCurrentParagraphId(existingBook.lastActiveParagraphId);
             }
           }
         }, 500);
       } else {
         const newBook: BookMetadata = {
-          id: `book-${Date.now()}`,
+          id: bookId,
           title: parsed.title,
           totalPages: parsed.totalPages,
           lastReadDate: now,
@@ -193,6 +271,12 @@ function App() {
         };
         setUserProfile(updatedProfile);
         localStorage.setItem('pdf_reader_profile', JSON.stringify(updatedProfile));
+
+        setActiveBookId(bookId);
+        localStorage.setItem('pdf_reader_active_book_id', bookId);
+        setParsedPdf(parsed);
+        setCurrentPage(1);
+        setScrollPercentage(0);
       }
 
       setRecentBooks(updatedRecents);
@@ -202,6 +286,68 @@ function App() {
       console.error(e);
       alert('A apărut o eroare la procesarea documentului PDF. Asigură-te că fișierul nu este securizat sau corupt.');
       setIsParsing(false);
+    }
+  };
+
+  const loadBookFromHistory = async (id: string) => {
+    setIsParsing(true);
+    setParseProgress(0);
+    try {
+      const bookData = await getParsedPDF(id);
+      if (bookData) {
+        setParsedPdf(bookData);
+        setActiveBookId(id);
+        localStorage.setItem('pdf_reader_active_book_id', id);
+
+        const metadata = recentBooks.find(b => b.id === id);
+        if (metadata) {
+          setScrollPercentage(metadata.progressPercentage || 0);
+          if (metadata.lastActiveParagraphId) {
+            const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
+            if (p) {
+              setCurrentPage(p.pageNumber);
+              
+              // Scroll to position in scroll mode
+              setTimeout(() => {
+                if (readerMainRef.current) {
+                  const element = paragraphRefs.current[p.id];
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'auto', block: 'center' });
+                  }
+                }
+              }, 300);
+            }
+          }
+        }
+      } else {
+        alert('Cartea selectată nu a fost găsită în baza de date locală.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('A apărut o eroare la încărcarea cărții.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const handleDeleteBook = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Ești sigur că vrei să ștergi această carte din istoric?')) return;
+
+    try {
+      const updated = recentBooks.filter(b => b.id !== id);
+      setRecentBooks(updated);
+      localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updated));
+
+      await deleteParsedPDF(id);
+
+      if (activeBookId === id) {
+        setActiveBookId(null);
+        localStorage.removeItem('pdf_reader_active_book_id');
+        setParsedPdf(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete book:', error);
     }
   };
 
@@ -235,6 +381,7 @@ function App() {
   // SCROLL PROGRESS TRACKING
   // --------------------------------------------------------------------------
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (layoutMode !== 'scroll') return;
     const target = e.currentTarget;
     const progress = (target.scrollTop / (target.scrollHeight - target.clientHeight)) * 100;
     const currentPercent = Math.round(progress || 0);
@@ -267,9 +414,9 @@ function App() {
   };
 
   const updateBookProgress = (paragraphId: string, percent: number) => {
-    if (!parsedPdf) return;
+    if (!parsedPdf || !activeBookId) return;
     const updated = recentBooks.map(b => {
-      if (b.title === parsedPdf.title) {
+      if (b.id === activeBookId) {
         return {
           ...b,
           progressPercentage: Math.max(b.progressPercentage, percent),
@@ -283,111 +430,44 @@ function App() {
   };
 
   // --------------------------------------------------------------------------
-  // TEXT-TO-SPEECH (TTS) PLAYBACK ENGINE
+  // PAGE NAVIGATION HANDLERS (PAGE MODE)
   // --------------------------------------------------------------------------
-  // Cancel Speech Synthesis on unmount
-  useEffect(() => {
-    return () => {
-      window.speechSynthesis.cancel();
-    };
-  }, []);
+  const goToNextPage = () => {
+    if (!parsedPdf) return;
+    if (currentPage < parsedPdf.totalPages) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      const percent = parsedPdf.totalPages > 1 ? Math.round(((nextPage - 1) / (parsedPdf.totalPages - 1)) * 100) : 100;
+      setScrollPercentage(percent);
 
-  const speakParagraph = (index: number) => {
-    if (!parsedPdf || index < 0 || index >= parsedPdf.paragraphs.length) {
-      stopTts();
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    const paragraph = parsedPdf.paragraphs[index];
-    setTtsCurrentParagraphId(paragraph.id);
-    ttsNextIndexRef.current = index + 1;
-
-    // Scroll paragraph smoothly into view so reader matches speech
-    const element = paragraphRefs.current[paragraph.id];
-    if (element && readerMainRef.current) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    const utterance = new SpeechSynthesisUtterance(paragraph.text);
-    
-    // Attempt to set Romanian voice or default to standard
-    const voices = window.speechSynthesis.getVoices();
-    const roVoice = voices.find(v => v.lang.startsWith('ro'));
-    if (roVoice) {
-      utterance.voice = roVoice;
-    }
-    
-    utterance.rate = ttsRate;
-
-    utterance.onstart = () => {
-      setTtsIsSpeaking(true);
-      setTtsIsPaused(false);
-    };
-
-    utterance.onend = () => {
-      // Auto-play next paragraph
-      if (ttsNextIndexRef.current < parsedPdf.paragraphs.length) {
-        speakParagraph(ttsNextIndexRef.current);
-      } else {
-        stopTts();
+      const firstP = parsedPdf.paragraphs.find(p => p.pageNumber === nextPage);
+      if (firstP) {
+        updateBookProgress(firstP.id, percent);
       }
-    };
+    }
+  };
 
-    utterance.onerror = (e) => {
-      // If error is not 'interrupted' or 'canceled' (which are triggered by manual actions)
-      if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        console.error('SpeechSynthesis error:', e);
-        stopTts();
+  const goToPrevPage = () => {
+    if (!parsedPdf) return;
+    if (currentPage > 1) {
+      const prevPage = currentPage - 1;
+      setCurrentPage(prevPage);
+      const percent = parsedPdf.totalPages > 1 ? Math.round(((prevPage - 1) / (parsedPdf.totalPages - 1)) * 100) : 100;
+      setScrollPercentage(percent);
+
+      const firstP = parsedPdf.paragraphs.find(p => p.pageNumber === prevPage);
+      if (firstP) {
+        updateBookProgress(firstP.id, percent);
       }
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const playTts = () => {
-    if (ttsIsPaused) {
-      window.speechSynthesis.resume();
-      setTtsIsPaused(false);
-      setTtsIsSpeaking(true);
-      return;
-    }
-
-    if (parsedPdf) {
-      // Start from current visible or last speaking paragraph
-      let startIdx = 0;
-      if (ttsCurrentParagraphId) {
-        const idx = parsedPdf.paragraphs.findIndex(p => p.id === ttsCurrentParagraphId);
-        if (idx !== -1) startIdx = idx;
-      }
-      speakParagraph(startIdx);
     }
   };
 
-  const pauseTts = () => {
-    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
-      setTtsIsPaused(true);
-      setTtsIsSpeaking(false);
-    }
-  };
-
-  const stopTts = () => {
-    window.speechSynthesis.cancel();
-    setTtsIsSpeaking(false);
-    setTtsIsPaused(false);
-    setTtsCurrentParagraphId(null);
-  };
-
-  const handleTtsRateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newRate = parseFloat(e.target.value);
-    setTtsRate(newRate);
-    if (ttsIsSpeaking) {
-      // Restart speaking with new rate
-      const idx = parsedPdf?.paragraphs.findIndex(p => p.id === ttsCurrentParagraphId) ?? -1;
-      if (idx !== -1) speakParagraph(idx);
-    }
+  const toggleBionic = () => {
+    setIsProcessingBionic(true);
+    setTimeout(() => {
+      setIsBionic(prev => !prev);
+      setIsProcessingBionic(false);
+    }, 120); // allow browser to paint loader first
   };
 
   // --------------------------------------------------------------------------
@@ -408,9 +488,10 @@ function App() {
   // CLOSING THE READER
   // --------------------------------------------------------------------------
   const handleBackToDashboard = () => {
-    stopTts();
     setParsedPdf(null);
     setIsZenMode(false);
+    localStorage.removeItem('pdf_reader_active_book_id');
+    setActiveBookId(null);
   };
 
   // --------------------------------------------------------------------------
@@ -424,24 +505,26 @@ function App() {
         {/* Top bar */}
         <header className="app-header">
           <div className="brand">
-            <div className="brand-icon">📚</div>
-            <span>AuraReader</span>
+            <div className="brand-icon">
+              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
+            </div>
+            <span>read-pdf</span>
           </div>
           <div className="header-actions">
-            <div className="user-badge" onClick={() => {
+            <span className="user-greeting" style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
+              Salut, {userProfile.name}!
+            </span>
+            <button className="btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
-            }} style={{ cursor: 'pointer' }}>
-              👤 {userProfile.name}
-            </div>
-            <button className="btn" onClick={() => setShowProfileModal(true)}>Setări Cont</button>
+            }}>Setări Cont</button>
           </div>
         </header>
 
         {/* Hero Section */}
         <section className="welcome-hero">
           <h2>Lectură Re-definită în Browser</h2>
-          <p>Încarcă orice fișier PDF și transformă-l instantaneu într-o carte digitală captivantă, ușor de citit, cu moduri de focusare, teme confortabile și asistență audio.</p>
+          <p>Încarcă orice fișier PDF și transformă-l instantaneu într-o carte digitală captivantă, ușor de citit, cu moduri de focusare, paginare pe coloane și teme confortabile.</p>
         </section>
 
         {/* Drag and Drop Zone */}
@@ -489,16 +572,15 @@ function App() {
                 <div 
                   key={book.id} 
                   className="recent-card"
-                  onClick={() => {
-                    // Gracefully prompt them to reload their file to maintain safe file loading constraints
-                    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-                    if (fileInput) {
-                      fileInput.click();
-                      // We save a temporary trigger to load progress once file matches
-                      alert(`Te rugăm să selectezi fișierul "${book.title}.pdf" pentru a continua lectura de la progresul tău de ${book.progressPercentage}%.`);
-                    }
-                  }}
+                  onClick={() => loadBookFromHistory(book.id)}
                 >
+                  <button 
+                    className="delete-book-btn" 
+                    onClick={(e) => handleDeleteBook(e, book.id)}
+                    title="Șterge din istoric"
+                  >
+                    ✕
+                  </button>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="card-icon">📄</span>
                     <span className="page-indicator-badge" style={{ opacity: 1, position: 'static' }}>
@@ -548,43 +630,16 @@ function App() {
           </div>
 
           <div className="reader-topbar-center">
-            {/* TTS Toolbar */}
-            <div className="tts-panel">
-              {ttsIsSpeaking ? (
-                <button className="btn btn-primary btn-icon-only" onClick={pauseTts} title="Pune pauză">
-                  ⏸
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-icon-only" onClick={playTts} title="Ascultă textul (Citire Audio)">
-                  ▶
-                </button>
-              )}
-              {(ttsIsSpeaking || ttsIsPaused) && (
-                <button className="btn btn-icon-only" onClick={stopTts} title="Oprește citirea">
-                  ⏹
-                </button>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <span className="tts-rate-label">Viteză:</span>
-                <select 
-                  className="tts-rate-select" 
-                  value={ttsRate}
-                  onChange={handleTtsRateChange}
-                >
-                  <option value="0.75">0.75x</option>
-                  <option value="1">1.0x</option>
-                  <option value="1.25">1.25x</option>
-                  <option value="1.5">1.5x</option>
-                  <option value="1.8">1.8x</option>
-                </select>
-              </div>
-            </div>
+            {/* Displaying Current Mode status */}
+            <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
+              {layoutMode === 'scroll' ? '📖 Mod Scroll' : `📄 Pagina ${currentPage} / ${parsedPdf.totalPages}`}
+            </span>
           </div>
 
           <div className="reader-topbar-right">
             <button 
               className={`btn ${isBionic ? 'btn-primary' : ''}`} 
-              onClick={() => setIsBionic(!isBionic)}
+              onClick={toggleBionic}
               title="Activează formatul de citire bionică (bolds initial letters)"
             >
               🧠 Citire Bionică
@@ -592,8 +647,8 @@ function App() {
             <button className="btn" onClick={() => setShowSidebar(!showSidebar)}>
               ⚙ Setări Vizuale
             </button>
-            <button className="btn btn-primary" onClick={() => setIsZenMode(true)} title="Activează modul focus zen">
-              ✨ Zen Focus
+            <button className="btn btn-primary" onClick={() => setIsZenMode(true)} title="Activează modul focus">
+              ✨ Modul Focus
             </button>
           </div>
         </header>
@@ -606,49 +661,72 @@ function App() {
         )}
 
         {/* Reader Container */}
-        <div className="reader-container">
+        <div className="reader-container" style={{ position: 'relative' }}>
           
           {/* Main article container */}
           <main 
             ref={readerMainRef}
-            className="reader-main" 
+            className={`reader-main ${layoutMode === 'page' ? 'page-mode' : ''}`} 
             onScroll={handleScroll}
           >
             <article 
-              className="reader-article"
+              className={`reader-article ${layoutMode === 'page' ? 'page-mode' : ''}`}
               style={{
                 '--font-active': activeFontClass,
                 '--font-size-active': `${fontSize}px`,
                 '--line-spacing-active': lineSpacing,
               } as React.CSSProperties}
             >
-              {parsedPdf.paragraphs.map((p, index) => {
-                const isCurrentlySpoken = p.id === ttsCurrentParagraphId;
-                return (
-                  <div 
-                    key={p.id}
-                    ref={el => { paragraphRefs.current[p.id] = el; }}
-                    className={`reader-paragraph-wrapper ${isCurrentlySpoken ? 'spoken-active' : ''}`}
-                    onClick={() => {
-                      // Click paragraph to read aloud! This is an amazing user experience feature
-                      speakParagraph(index);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    title="Apasă pentru a asculta acest paragraf"
-                  >
-                    <span className="page-indicator-badge">
-                      Pag. {p.pageNumber}
-                    </span>
-                    {isBionic ? (
-                      renderBionicParagraph(p.text)
-                    ) : (
-                      <p>{p.text}</p>
-                    )}
-                  </div>
-                );
-              })}
+              {parsedPdf.paragraphs
+                .filter(p => layoutMode === 'scroll' || p.pageNumber === currentPage)
+                .map((p) => {
+                  return (
+                    <div 
+                      key={p.id}
+                      ref={el => { paragraphRefs.current[p.id] = el; }}
+                      className="reader-paragraph-wrapper"
+                      style={{ transition: 'background-color 0.2s ease' }}
+                    >
+                      {layoutMode === 'scroll' && (
+                        <span className="page-indicator-badge">
+                          Pag. {p.pageNumber}
+                        </span>
+                      )}
+                      {isBionic ? (
+                        renderBionicParagraph(p.text)
+                      ) : (
+                        <p>{p.text}</p>
+                      )}
+                    </div>
+                  );
+                })}
             </article>
           </main>
+
+          {/* Navigation Controls in Page Mode */}
+          {layoutMode === 'page' && (
+            <div className="page-navigation-bar">
+              <button 
+                className="btn page-nav-btn" 
+                onClick={goToPrevPage} 
+                disabled={currentPage === 1}
+                title="Pagina precedentă (Tasta Săgeată Stânga / Sus)"
+              >
+                ◀ Înapoi
+              </button>
+              <span className="page-nav-info">
+                Pagina {currentPage} din {parsedPdf.totalPages}
+              </span>
+              <button 
+                className="btn page-nav-btn" 
+                onClick={goToNextPage} 
+                disabled={currentPage === parsedPdf.totalPages}
+                title="Pagina următoare (Tasta Space / Săgeată Dreapta / Jos)"
+              >
+                Înainte ▶
+              </button>
+            </div>
+          )}
 
           {/* Settings Sidebar */}
           {showSidebar && !isZenMode && (
@@ -656,6 +734,37 @@ function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Ajustări Vizuale</h3>
                 <button className="btn btn-icon-only" onClick={() => setShowSidebar(false)}>✕</button>
+              </div>
+
+              {/* View Layout Mode (Scroll vs Page) */}
+              <div className="sidebar-section">
+                <span className="sidebar-label">Mod Vizualizare</span>
+                <div className="choice-grid">
+                  <button 
+                    className={`btn ${layoutMode === 'scroll' ? 'btn-primary' : ''}`} 
+                    onClick={() => {
+                      setLayoutMode('scroll');
+                      // Restore scroll after layout mode toggle
+                      setTimeout(() => {
+                        const activeP = parsedPdf.paragraphs.find(p => p.pageNumber === currentPage);
+                        if (activeP && readerMainRef.current) {
+                          const element = paragraphRefs.current[activeP.id];
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'auto', block: 'center' });
+                          }
+                        }
+                      }, 100);
+                    }}
+                  >
+                    Scroll Clasic
+                  </button>
+                  <button 
+                    className={`btn ${layoutMode === 'page' ? 'btn-primary' : ''}`} 
+                    onClick={() => setLayoutMode('page')}
+                  >
+                    Pagini / Coloane
+                  </button>
+                </div>
               </div>
 
               {/* Themes Selector */}
@@ -781,7 +890,7 @@ function App() {
             <button 
               className="btn btn-primary zen-exit-btn" 
               onClick={() => setIsZenMode(false)}
-              title="Ieși din modul focus zen"
+              title="Ieși din modul focus"
             >
               🚪 Ieși din Mod Focus
             </button>
@@ -814,7 +923,7 @@ function App() {
             />
           </div>
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-            <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>Statistici Lectură AuraReader:</h4>
+            <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>Statistici Lectură read-pdf:</h4>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.85rem' }}>
               <div>📚 Cărți procesate:</div>
               <div style={{ fontWeight: 'bold' }}>{userProfile.totalBooksParsed}</div>
@@ -837,6 +946,12 @@ function App() {
     <>
       {parsedPdf ? renderReader() : renderDashboard()}
       {renderProfileModal()}
+      {isProcessingBionic && (
+        <div className="bionic-loading-overlay">
+          <div className="bionic-spinner"></div>
+          <p>Se optimizează textul pentru citire bionică...</p>
+        </div>
+      )}
     </>
   );
 }
