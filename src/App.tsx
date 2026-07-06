@@ -497,17 +497,6 @@ function App() {
     return isDefault ? 'Salut, Cititorule!' : `Salut, ${userProfile.name}!`;
   };
 
-  const getThemeIcon = (themeName: string) => {
-    switch (themeName) {
-      case 'sepia': return '🍂';
-      case 'light': return '☀️';
-      case 'dark': return '🌙';
-      case 'forest': return '🌲';
-      case 'sunset': return '🌆';
-      default: return '⚙️';
-    }
-  };
-
   // --------------------------------------------------------------------------
   // RENDER SECTIONS
   // --------------------------------------------------------------------------
@@ -526,7 +515,7 @@ function App() {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
             }} title="Deschide Setări & Personalizare">
-              👤 {getGreetingText()} {getThemeIcon(theme)}
+              {getGreetingText()}
             </button>
           </div>
         </header>
@@ -591,7 +580,7 @@ function App() {
                   >
                     ✕
                   </button>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                     <span className="card-icon">📄</span>
                     <span className="page-indicator-badge" style={{ opacity: 1, position: 'static' }}>
                       {book.totalPages} pagini
@@ -670,7 +659,7 @@ function App() {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
             }} title="Deschide Setări & Personalizare">
-              👤 {getGreetingText()} {getThemeIcon(theme)}
+              {getGreetingText()}
             </button>
           </div>
         </header>
