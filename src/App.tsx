@@ -36,8 +36,7 @@ function App() {
   const [fontFamily, setFontFamily] = useState<string>('serif');
   const [isBionic, setIsBionic] = useState<boolean>(false);
   const [isProcessingBionic, setIsProcessingBionic] = useState<boolean>(false);
-  const [isZenMode, setIsZenMode] = useState<boolean>(false);
-  const [showSidebar, setShowSidebar] = useState<boolean>(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [layoutMode, setLayoutMode] = useState<'scroll' | 'page'>('scroll');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
@@ -49,7 +48,6 @@ function App() {
     joinedDate: new Date().toLocaleDateString('ro-RO'),
   });
   const [recentBooks, setRecentBooks] = useState<BookMetadata[]>([]);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [tempProfileName, setTempProfileName] = useState('');
 
   // --- READER SCROLL STATE ---
@@ -215,7 +213,7 @@ function App() {
       // Save full parsed PDF to IndexedDB for quick persistent loading
       await saveParsedPDF(bookId, parsed);
 
-      // Check if this book title is already in recent books list to restore progress (optional merge)
+      // Check if this book title is already in recent books list to restore progress
       const existingBook = recentBooks.find(b => b.title === parsed.title);
       
       const now = new Date().toLocaleDateString('ro-RO', {
@@ -489,9 +487,25 @@ function App() {
   // --------------------------------------------------------------------------
   const handleBackToDashboard = () => {
     setParsedPdf(null);
-    setIsZenMode(false);
     localStorage.removeItem('pdf_reader_active_book_id');
     setActiveBookId(null);
+  };
+
+  // Helper to resolve custom responsive greetings
+  const getGreetingText = () => {
+    const isDefault = userProfile.name.trim() === 'Cititor Pasionat' || userProfile.name.trim() === '';
+    return isDefault ? 'Salut, Cititorule!' : `Salut, ${userProfile.name}!`;
+  };
+
+  const getThemeIcon = (themeName: string) => {
+    switch (themeName) {
+      case 'sepia': return '🍂';
+      case 'light': return '☀️';
+      case 'dark': return '🌙';
+      case 'forest': return '🌲';
+      case 'sunset': return '🌆';
+      default: return '⚙️';
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -505,16 +519,18 @@ function App() {
         {/* Top bar */}
         <header className="app-header">
           <div className="brand">
+            <div className="brand-icon">
+              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
+            </div>
             <span>read-pdf</span>
           </div>
           <div className="header-actions">
-            <span className="user-greeting" style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
-              Salut, {userProfile.name}!
-            </span>
-            <button className="btn" onClick={() => {
+            <button className="btn settings-trigger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
-            }}>Setări Cont</button>
+            }} title="Deschide Setări & Personalizare">
+              👤 {getGreetingText()} {getThemeIcon(theme)}
+            </button>
           </div>
         </header>
 
@@ -613,52 +629,68 @@ function App() {
     if (fontFamily === 'dyslexic') activeFontClass = 'var(--font-dyslexic)';
 
     return (
-      <div className={`reader-wrapper ${isZenMode ? 'zen-mode' : ''}`}>
+      <div className="reader-wrapper">
         
-        {/* Top Control Bar */}
-        <header className="reader-topbar">
-          <div className="reader-topbar-left">
-            <button className="btn" onClick={handleBackToDashboard}>
-              ⬅ Înapoi
-            </button>
-            <div className="reader-title" title={parsedPdf.title}>
-              {parsedPdf.title}
+        {/* Top Control Bar - Unifed to look exactly like Dashboard Navbar */}
+        <header className="reader-topbar app-header">
+          <div className="brand clickable" onClick={handleBackToDashboard} title="Mergi înapoi la Dashboard">
+            <div className="brand-icon">
+              <img src="/logo.svg" alt="logo" style={{ width: '28px', height: '28px' }} />
             </div>
+            <span>read-pdf</span>
           </div>
 
           <div className="reader-topbar-center">
-            {/* Displaying Current Mode status */}
-            <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
-              {layoutMode === 'scroll' ? '📖 Mod Scroll' : `📄 Pagina ${currentPage} / ${parsedPdf.totalPages}`}
-            </span>
+            {/* Displaying Page navigation in center of navbar */}
+            {layoutMode === 'page' ? (
+              <div className="header-navigation">
+                <button 
+                  className="btn btn-icon-only page-nav-mini-btn" 
+                  onClick={goToPrevPage} 
+                  disabled={currentPage === 1}
+                  title="Pagina precedentă (Taste: Stânga / Sus)"
+                >
+                  ◀
+                </button>
+                <span className="page-nav-info">
+                  {currentPage} / {parsedPdf.totalPages}
+                </span>
+                <button 
+                  className="btn btn-icon-only page-nav-mini-btn" 
+                  onClick={goToNextPage} 
+                  disabled={currentPage === parsedPdf.totalPages}
+                  title="Pagina următoare (Taste: Space / Dreapta / Jos)"
+                >
+                  ▶
+                </button>
+              </div>
+            ) : (
+              <span className="scroll-progress-badge">
+                📖 Progres: {scrollPercentage}%
+              </span>
+            )}
           </div>
 
-          <div className="reader-topbar-right">
+          <div className="reader-topbar-right header-actions">
             <button 
               className={`btn ${isBionic ? 'btn-primary' : ''}`} 
               onClick={toggleBionic}
-              title="Activează formatul de citire bionică (bolds initial letters)"
+              title="Activează formatul de citire bionică"
+              style={{ borderRadius: '24px', padding: '0.5rem 1rem', fontSize: '0.9rem' }}
             >
               🧠 Citire Bionică
             </button>
-            <button className="btn" onClick={() => setShowSidebar(!showSidebar)}>
-              ⚙ Setări Vizuale
-            </button>
-            <button className="btn btn-primary" onClick={() => setIsZenMode(true)} title="Activează modul focus">
-              ✨ Modul Focus
+            <button className="btn settings-trigger-btn" onClick={() => {
+              setTempProfileName(userProfile.name);
+              setShowProfileModal(true);
+            }} title="Deschide Setări & Personalizare">
+              👤 {getGreetingText()} {getThemeIcon(theme)}
             </button>
           </div>
         </header>
 
-        {/* Zen Mode Progress Bar */}
-        {isZenMode && (
-          <div className="zen-progress-bar-container">
-            <div className="zen-progress-bar" style={{ width: `${scrollPercentage}%` }}></div>
-          </div>
-        )}
-
         {/* Reader Container */}
-        <div className="reader-container" style={{ position: 'relative' }}>
+        <div className="reader-container">
           
           {/* Main article container */}
           <main 
@@ -682,7 +714,6 @@ function App() {
                       key={p.id}
                       ref={el => { paragraphRefs.current[p.id] = el; }}
                       className="reader-paragraph-wrapper"
-                      style={{ transition: 'background-color 0.2s ease' }}
                     >
                       {layoutMode === 'scroll' && (
                         <span className="page-indicator-badge">
@@ -700,48 +731,45 @@ function App() {
             </article>
           </main>
 
-          {/* Navigation Controls in Page Mode */}
-          {layoutMode === 'page' && (
-            <div className="page-navigation-bar">
-              <button 
-                className="btn page-nav-btn" 
-                onClick={goToPrevPage} 
-                disabled={currentPage === 1}
-                title="Pagina precedentă (Tasta Săgeată Stânga / Sus)"
-              >
-                ◀ Înapoi
-              </button>
-              <span className="page-nav-info">
-                Pagina {currentPage} din {parsedPdf.totalPages}
-              </span>
-              <button 
-                className="btn page-nav-btn" 
-                onClick={goToNextPage} 
-                disabled={currentPage === parsedPdf.totalPages}
-                title="Pagina următoare (Tasta Space / Săgeată Dreapta / Jos)"
-              >
-                Înainte ▶
-              </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Unified Settings Modal Dialog
+  const renderProfileModal = () => {
+    if (!showProfileModal) return null;
+    return (
+      <div className="modal-backdrop">
+        <div className="modal-content unified-settings-modal">
+          <div className="modal-header">
+            <h3>⚙️ Setări & Personalizare</h3>
+            <button className="btn btn-icon-only" onClick={() => setShowProfileModal(false)}>✕</button>
+          </div>
+          
+          <div className="modal-body">
+            {/* 1. Name input */}
+            <div className="form-group">
+              <label htmlFor="user-name-input">Numele Tău de Cititor</label>
+              <input 
+                id="user-name-input"
+                type="text" 
+                className="form-input"
+                value={tempProfileName}
+                onChange={(e) => setTempProfileName(e.target.value)}
+                placeholder="Ex: Mihai, Elena, etc."
+              />
             </div>
-          )}
 
-          {/* Settings Sidebar */}
-          {showSidebar && !isZenMode && (
-            <aside className="reader-sidebar">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Ajustări Vizuale</h3>
-                <button className="btn btn-icon-only" onClick={() => setShowSidebar(false)}>✕</button>
-              </div>
-
-              {/* View Layout Mode (Scroll vs Page) */}
-              <div className="sidebar-section">
-                <span className="sidebar-label">Mod Vizualizare</span>
+            {/* 2. Layout Mode Selector */}
+            {parsedPdf && (
+              <div className="settings-section">
+                <span className="settings-label">Mod Vizualizare Document</span>
                 <div className="choice-grid">
                   <button 
                     className={`btn ${layoutMode === 'scroll' ? 'btn-primary' : ''}`} 
                     onClick={() => {
                       setLayoutMode('scroll');
-                      // Restore scroll after layout mode toggle
                       setTimeout(() => {
                         const activeP = parsedPdf.paragraphs.find(p => p.pageNumber === currentPage);
                         if (activeP && readerMainRef.current) {
@@ -753,97 +781,72 @@ function App() {
                       }, 100);
                     }}
                   >
-                    Scroll Clasic
+                    📖 Scroll Clasic
                   </button>
                   <button 
                     className={`btn ${layoutMode === 'page' ? 'btn-primary' : ''}`} 
                     onClick={() => setLayoutMode('page')}
                   >
-                    Pagini / Coloane
+                    📄 Pagini / Coloane
                   </button>
                 </div>
               </div>
+            )}
 
-              {/* Themes Selector */}
-              <div className="sidebar-section">
-                <span className="sidebar-label">Tema de Lectură</span>
-                <div className="theme-selector">
-                  <button 
-                    className={`theme-btn theme-btn-sepia ${theme === 'sepia' ? 'active' : ''}`} 
-                    onClick={() => setTheme('sepia')}
-                    title="Sepia Hârtie"
-                  >
-                    🍂
-                  </button>
-                  <button 
-                    className={`theme-btn theme-btn-light ${theme === 'light' ? 'active' : ''}`} 
-                    onClick={() => setTheme('light')}
-                    title="Luminos"
-                  >
-                    ☀️
-                  </button>
-                  <button 
-                    className={`theme-btn theme-btn-dark ${theme === 'dark' ? 'active' : ''}`} 
-                    onClick={() => setTheme('dark')}
-                    title="Întunecat"
-                  >
-                    🌙
-                  </button>
-                  <button 
-                    className={`theme-btn theme-btn-forest ${theme === 'forest' ? 'active' : ''}`} 
-                    onClick={() => setTheme('forest')}
-                    title="Midnight Forest"
-                  >
-                    🌲
-                  </button>
-                  <button 
-                    className={`theme-btn theme-btn-sunset ${theme === 'sunset' ? 'active' : ''}`} 
-                    onClick={() => setTheme('sunset')}
-                    title="Sunset Oasis"
-                  >
-                    🌆
-                  </button>
-                </div>
+            {/* 3. Theme Selector */}
+            <div className="settings-section">
+              <span className="settings-label">Tema de Lectură</span>
+              <div className="theme-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem' }}>
+                <button 
+                  className={`theme-btn theme-btn-sepia ${theme === 'sepia' ? 'active' : ''}`} 
+                  onClick={() => setTheme('sepia')}
+                  title="Sepia Hârtie"
+                >
+                  🍂
+                </button>
+                <button 
+                  className={`theme-btn theme-btn-light ${theme === 'light' ? 'active' : ''}`} 
+                  onClick={() => setTheme('light')}
+                  title="Luminos"
+                >
+                  ☀️
+                </button>
+                <button 
+                  className={`theme-btn theme-btn-dark ${theme === 'dark' ? 'active' : ''}`} 
+                  onClick={() => setTheme('dark')}
+                  title="Întunecat"
+                >
+                  🌙
+                </button>
+                <button 
+                  className={`theme-btn theme-btn-forest ${theme === 'forest' ? 'active' : ''}`} 
+                  onClick={() => setTheme('forest')}
+                  title="Midnight Forest"
+                >
+                  🌲
+                </button>
+                <button 
+                  className={`theme-btn theme-btn-sunset ${theme === 'sunset' ? 'active' : ''}`} 
+                  onClick={() => setTheme('sunset')}
+                  title="Sunset Oasis"
+                >
+                  🌆
+                </button>
               </div>
+            </div>
 
-              {/* Font Size controls */}
-              <div className="sidebar-section">
-                <span className="sidebar-label">Dimensiune Text ({fontSize}px)</span>
+            {/* 4. Text Size & Line spacing in grid */}
+            <div className="settings-grid-2col">
+              <div className="settings-section">
+                <span className="settings-label">Dimensiune Text ({fontSize}px)</span>
                 <div className="font-size-controls">
                   <button className="btn font-size-btn" onClick={() => setFontSize(Math.max(14, fontSize - 2))}>A-</button>
                   <button className="btn font-size-btn" onClick={() => setFontSize(Math.min(36, fontSize + 2))}>A+</button>
                 </div>
               </div>
 
-              {/* Font Style selectors */}
-              <div className="sidebar-section">
-                <span className="sidebar-label">Tip Font</span>
-                <div className="choice-grid">
-                  <button 
-                    className={`btn ${fontFamily === 'serif' ? 'btn-primary' : ''}`} 
-                    onClick={() => setFontFamily('serif')}
-                  >
-                    Serif (Carte)
-                  </button>
-                  <button 
-                    className={`btn ${fontFamily === 'sans' ? 'btn-primary' : ''}`} 
-                    onClick={() => setFontFamily('sans')}
-                  >
-                    Sans-Serif
-                  </button>
-                </div>
-                <button 
-                  className={`btn ${fontFamily === 'dyslexic' ? 'btn-primary' : ''}`} 
-                  onClick={() => setFontFamily('dyslexic')}
-                  style={{ marginTop: '0.25rem', width: '100%' }}
-                >
-                  Font Ultra-Lizibil (Dyslexic)
-                </button>
-              </div>
-
-              {/* Line spacing selection */}
-              <div className="sidebar-section">
-                <span className="sidebar-label">Distanțiere Linii</span>
+              <div className="settings-section">
+                <span className="settings-label">Distanțiere Linii</span>
                 <div className="choice-grid">
                   <button 
                     className={`btn ${lineSpacing === 1.4 ? 'btn-primary' : ''}`} 
@@ -858,81 +861,54 @@ function App() {
                     Normală
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* 5. Font Style Selector */}
+            <div className="settings-section">
+              <span className="settings-label">Tip Font Text</span>
+              <div className="font-family-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
                 <button 
-                  className={`btn ${lineSpacing === 2.0 ? 'btn-primary' : ''}`} 
-                  onClick={() => setLineSpacing(2.0)}
-                  style={{ marginTop: '0.25rem', width: '100%' }}
+                  className={`btn ${fontFamily === 'serif' ? 'btn-primary' : ''}`} 
+                  onClick={() => setFontFamily('serif')}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
                 >
-                  Aerisită (2.0)
+                  Serif (Carte)
+                </button>
+                <button 
+                  className={`btn ${fontFamily === 'sans' ? 'btn-primary' : ''}`} 
+                  onClick={() => setFontFamily('sans')}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
+                >
+                  Sans-Serif
+                </button>
+                <button 
+                  className={`btn ${fontFamily === 'dyslexic' ? 'btn-primary' : ''}`} 
+                  onClick={() => setFontFamily('dyslexic')}
+                  style={{ fontSize: '0.8rem', padding: '0.5rem' }}
+                >
+                  Dyslexic
                 </button>
               </div>
+            </div>
 
-              {/* Progress Panel */}
-              <div className="sidebar-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                <span className="sidebar-label">Progres Lectură</span>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                  <span>Finalizat:</span>
-                  <span>{scrollPercentage}%</span>
-                </div>
-                <div className="card-progress-bar-container">
-                  <div className="card-progress-bar" style={{ width: `${scrollPercentage}%` }}></div>
-                </div>
-              </div>
-
-            </aside>
-          )}
-
-          {/* Zen Focus Mode Exit Overlay button */}
-          {isZenMode && (
-            <button 
-              className="btn btn-primary zen-exit-btn" 
-              onClick={() => setIsZenMode(false)}
-              title="Ieși din modul focus"
-            >
-              🚪 Ieși din Mod Focus
-            </button>
-          )}
-
-        </div>
-      </div>
-    );
-  };
-
-  // Profile Customization Modal Dialog
-  const renderProfileModal = () => {
-    if (!showProfileModal) return null;
-    return (
-      <div className="modal-backdrop">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h3>👤 Personalizare Profil Local</h3>
-            <button className="btn btn-icon-only" onClick={() => setShowProfileModal(false)}>✕</button>
-          </div>
-          <div className="form-group">
-            <label htmlFor="user-name-input">Numele Tău de Cititor</label>
-            <input 
-              id="user-name-input"
-              type="text" 
-              className="form-input"
-              value={tempProfileName}
-              onChange={(e) => setTempProfileName(e.target.value)}
-              placeholder="Ex: Mihai, Elena, etc."
-            />
-          </div>
-          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-            <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>Statistici Lectură read-pdf:</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.85rem' }}>
-              <div>📚 Cărți procesate:</div>
-              <div style={{ fontWeight: 'bold' }}>{userProfile.totalBooksParsed}</div>
-              <div>📅 Membru din:</div>
-              <div style={{ fontWeight: 'bold' }}>{userProfile.joinedDate}</div>
-              <div>🎨 Temă activă:</div>
-              <div style={{ fontWeight: 'bold', textTransform: 'capitalize' }}>{theme}</div>
+            {/* 6. Statistics / Info tag */}
+            <div className="settings-stats-footer" style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+              <span className="stats-tag" style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                📚 {userProfile.totalBooksParsed} Cărți
+              </span>
+              <span className="stats-tag" style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                📅 Din: {userProfile.joinedDate}
+              </span>
+              <span className="stats-tag" style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                🎨 Temă: {theme}
+              </span>
             </div>
           </div>
+
           <div className="modal-footer">
             <button className="btn" onClick={() => setShowProfileModal(false)}>Anulează</button>
-            <button className="btn btn-primary" onClick={saveProfile}>Salvează</button>
+            <button className="btn btn-primary" onClick={saveProfile}>Salvează & Aplică</button>
           </div>
         </div>
       </div>
