@@ -21,6 +21,8 @@ interface UserProfile {
   joinedDate: string;
 }
 
+const FONT_SIZES = [16, 18, 20, 24, 28, 32, 36];
+
 function App() {
   // --- APP STATE ---
   const [parsedPdf, setParsedPdf] = useState<ParsedPDF | null>(null);
@@ -31,7 +33,7 @@ function App() {
 
   // --- SETTINGS STATE ---
   const [theme, setTheme] = useState<string>('sepia');
-  const [fontSize, setFontSize] = useState<number>(19);
+  const [fontSize, setFontSize] = useState<number>(16);
   const [lineSpacing, setLineSpacing] = useState<number>(1.65);
   const [fontFamily, setFontFamily] = useState<string>('serif');
   const [isBionic, setIsBionic] = useState<boolean>(false);
@@ -428,34 +430,67 @@ function App() {
   };
 
   // --------------------------------------------------------------------------
-  // PAGE NAVIGATION HANDLERS (PAGE MODE)
+  // PAGE NAVIGATION HANDLERS (PAGE MODE - HORIZONTAL)
   // --------------------------------------------------------------------------
+  const [totalHorizontalPages, setTotalHorizontalPages] = useState<number>(1);
+
+  // Funcție care determină distanța exactă la pixel pe care trebuie să o dăm "paginii"
+  // (Este lățimea vizibilă a containerului + golul de column-gap invizibil dintre ecrane)
+  const getScrollStep = () => {
+    if (!readerMainRef.current) return 0;
+    const article = readerMainRef.current.querySelector('.reader-article');
+    let gap = 0;
+    if (article) {
+      const gapStr = window.getComputedStyle(article).columnGap;
+      if (gapStr && gapStr.endsWith('px')) {
+        gap = parseFloat(gapStr);
+      } else {
+        gap = 48; // Valoarea default fallback pt 3rem
+      }
+    }
+    return readerMainRef.current.clientWidth + gap;
+  };
+
+  // Recalculates horizontal pages when rendering finishes or window resizes
+  useEffect(() => {
+    if (layoutMode !== 'page' || !parsedPdf) return;
+    const calculatePages = () => {
+      if (readerMainRef.current) {
+        const step = getScrollStep();
+        if (step > 0) {
+          // scrollWidth reprezintă tot conținutul orizontal generat.
+          // Numărul real de pagini este lățimea totală / lățimea unui ecran (inclusiv gap)
+          const total = Math.ceil(readerMainRef.current.scrollWidth / step);
+          setTotalHorizontalPages(Math.max(1, total));
+        }
+      }
+    };
+    // Calculate initial cu un timeout suficient pentru a permite CSS-ului Multi-column să facă wrap-ul
+    setTimeout(calculatePages, 200);
+    window.addEventListener('resize', calculatePages);
+    return () => window.removeEventListener('resize', calculatePages);
+  }, [layoutMode, parsedPdf, fontSize, lineSpacing, fontFamily]);
+
   const goToNextPage = () => {
     if (!parsedPdf) return;
-    if (currentPage < parsedPdf.totalPages) {
-      const nextPage = currentPage + 1;
-      setCurrentPage(nextPage);
-      const percent = parsedPdf.totalPages > 1 ? Math.round(((nextPage - 1) / (parsedPdf.totalPages - 1)) * 100) : 100;
-      setScrollPercentage(percent);
-
-      const firstP = parsedPdf.paragraphs.find(p => p.pageNumber === nextPage);
-      if (firstP) {
-        updateBookProgress(firstP.id, percent);
+    if (layoutMode === 'page' && readerMainRef.current) {
+      if (currentPage < totalHorizontalPages) {
+        const next = currentPage + 1;
+        setCurrentPage(next);
+        readerMainRef.current.scrollBy({ left: getScrollStep(), behavior: 'smooth' });
+        setScrollPercentage(Math.round((next / totalHorizontalPages) * 100));
       }
     }
   };
 
   const goToPrevPage = () => {
     if (!parsedPdf) return;
-    if (currentPage > 1) {
-      const prevPage = currentPage - 1;
-      setCurrentPage(prevPage);
-      const percent = parsedPdf.totalPages > 1 ? Math.round(((prevPage - 1) / (parsedPdf.totalPages - 1)) * 100) : 100;
-      setScrollPercentage(percent);
-
-      const firstP = parsedPdf.paragraphs.find(p => p.pageNumber === prevPage);
-      if (firstP) {
-        updateBookProgress(firstP.id, percent);
+    if (layoutMode === 'page' && readerMainRef.current) {
+      if (currentPage > 1) {
+        const prev = currentPage - 1;
+        setCurrentPage(prev);
+        readerMainRef.current.scrollBy({ left: -getScrollStep(), behavior: 'smooth' });
+        setScrollPercentage(Math.round((prev / totalHorizontalPages) * 100));
       }
     }
   };
@@ -636,12 +671,12 @@ function App() {
                   ◀
                 </button>
                 <span className="page-nav-info">
-                  {currentPage} / {parsedPdf.totalPages}
+                  {currentPage} / {totalHorizontalPages}
                 </span>
                 <button 
                   className="btn btn-icon-only page-nav-mini-btn" 
                   onClick={goToNextPage} 
-                  disabled={currentPage === parsedPdf.totalPages}
+                  disabled={currentPage >= totalHorizontalPages}
                   title="Pagina următoare (Taste: Space / Dreapta / Jos)"
                 >
                   ▶
@@ -681,9 +716,7 @@ function App() {
                 '--line-spacing-active': lineSpacing,
               } as React.CSSProperties}
             >
-              {parsedPdf.paragraphs
-                .filter(p => layoutMode === 'scroll' || p.pageNumber === currentPage)
-                .map((p) => {
+              {parsedPdf.paragraphs.map((p) => {
                   return (
                     <div 
                       key={p.id}
@@ -815,8 +848,16 @@ function App() {
               <div className="settings-section">
                 <span className="settings-label">Dimensiune Text ({fontSize}px)</span>
                 <div className="font-size-controls">
-                  <button className="btn font-size-btn" onClick={() => setFontSize(Math.max(14, fontSize - 2))}>A-</button>
-                  <button className="btn font-size-btn" onClick={() => setFontSize(Math.min(36, fontSize + 2))}>A+</button>
+                  <button className="btn font-size-btn" onClick={() => {
+                    const currentIndex = FONT_SIZES.indexOf(fontSize);
+                    if (currentIndex > 0) setFontSize(FONT_SIZES[currentIndex - 1]);
+                    else if (currentIndex === -1) setFontSize(16);
+                  }}>A-</button>
+                  <button className="btn font-size-btn" onClick={() => {
+                    const currentIndex = FONT_SIZES.indexOf(fontSize);
+                    if (currentIndex !== -1 && currentIndex < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[currentIndex + 1]);
+                    else if (currentIndex === -1) setFontSize(18);
+                  }}>A+</button>
                 </div>
               </div>
 

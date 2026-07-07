@@ -971,18 +971,31 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Page mode layout column styles */
 .reader-main.page-mode {
-  padding: 3rem 3rem 6rem !important;
+  padding: 1.5rem 1.5rem 5rem 1.5rem !important;
+  overflow-x: hidden; /* Vom naviga prin script / scrollLeft */
+  overflow-y: hidden; /* FĂRĂ scroll vertical absolut deloc */
+  display: block; /* Anulăm flexbox-ul pentru a lăsa columns să lucreze corect */
+  scroll-behavior: smooth;
 }
 
 .reader-article.page-mode {
-  column-width: 320px;
-  column-gap: 2.5rem;
-  max-width: 100% !important;
+  height: calc(100vh - 160px); /* Obligă textul să o ia spre dreapta dacă depășește ecranul */
+  column-width: calc(50vw - 3rem); /* ~2 coloane pe desktop */
+  column-gap: 3rem;
+  max-width: none !important;
   margin: 0;
+  padding: 0;
 }
 
 .reader-article.page-mode .reader-paragraph-wrapper {
   break-inside: avoid;
   -webkit-column-break-inside: avoid;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .reader-article.page-mode {
+    column-width: calc(100vw - 3rem); /* O singură coloană pe lățimea ecranului de mobil */
+    column-gap: 1.5rem;
+  }
 }
