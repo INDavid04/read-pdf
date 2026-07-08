@@ -980,8 +980,11 @@ h1, h2, h3, h4, h5, h6 {
 
 .reader-article.page-mode {
   height: calc(100vh - 160px); /* Obligă textul să o ia spre dreapta dacă depășește ecranul */
-  column-width: calc(50vw - 3rem); /* ~2 coloane pe desktop */
-  column-gap: 3rem;
+  /* Coloane înguste tip tipografie/Biblie: valoare în `em`, deci se scalează automat
+     cu mărimea fontului aleasă de utilizator, păstrând un număr de caractere pe linie
+     confortabil la citit. Browserul decide singur câte coloane încap pe ecran. */
+  column-width: 20em;
+  column-gap: 2.5em;
   max-width: none !important;
   margin: 0;
   padding: 0;

@@ -436,48 +436,63 @@ function App() {
 
   // Funcție care determină distanța exactă la pixel pe care trebuie să o dăm "paginii"
   // (Este lățimea vizibilă a containerului + golul de column-gap invizibil dintre ecrane)
+  // IMPORTANT: masuram latimea REALA a lui .reader-article (containerul cu coloane),
+  // NU a parintelui .reader-main. Parintele are propriul padding, iar daca foloseam
+  // clientWidth-ul lui + gap, padding-ul era numarat de doua ori => fiecare "pagina"
+  // sarea cu ~48px in plus, motiv pentru care textul se taia la margini.
   const getScrollStep = () => {
     if (!readerMainRef.current) return 0;
-    const article = readerMainRef.current.querySelector('.reader-article');
+    const article = readerMainRef.current.querySelector('.reader-article') as HTMLElement | null;
+    if (!article) return readerMainRef.current.clientWidth;
+
     let gap = 0;
-    if (article) {
-      const gapStr = window.getComputedStyle(article).columnGap;
-      if (gapStr && gapStr.endsWith('px')) {
-        gap = parseFloat(gapStr);
-      } else {
-        gap = 48; // Valoarea default fallback pt 3rem
-      }
+    const gapStr = window.getComputedStyle(article).columnGap;
+    if (gapStr && gapStr.endsWith('px')) {
+      gap = parseFloat(gapStr);
+    } else {
+      gap = 32;
     }
-    return readerMainRef.current.clientWidth + gap;
+
+    const articleWidth = article.getBoundingClientRect().width;
+    return articleWidth + gap;
   };
 
-  // Recalculates horizontal pages when rendering finishes or window resizes
+  // Recalculates horizontal pages when rendering finishes or window resizes,
+  // and RE-SYNCS the actual scroll position to match currentPage.
+  // Fără acest re-sync, orice reflow (schimbare font, spațiere, resize) lasă
+  // scrollLeft "înghețat" la o poziție în pixeli care nu mai cade pe o graniță
+  // de coloană validă -> exact cauza textului tăiat la mijloc.
   useEffect(() => {
     if (layoutMode !== 'page' || !parsedPdf) return;
     const calculatePages = () => {
       if (readerMainRef.current) {
         const step = getScrollStep();
         if (step > 0) {
-          // scrollWidth reprezintă tot conținutul orizontal generat.
-          // Numărul real de pagini este lățimea totală / lățimea unui ecran (inclusiv gap)
           const total = Math.ceil(readerMainRef.current.scrollWidth / step);
-          setTotalHorizontalPages(Math.max(1, total));
+          const clampedTotal = Math.max(1, total);
+          setTotalHorizontalPages(clampedTotal);
+
+          const safePage = Math.min(currentPage, clampedTotal);
+          if (safePage !== currentPage) setCurrentPage(safePage);
+          readerMainRef.current.scrollTo({ left: (safePage - 1) * step, behavior: 'auto' });
         }
       }
     };
-    // Calculate initial cu un timeout suficient pentru a permite CSS-ului Multi-column să facă wrap-ul
     setTimeout(calculatePages, 200);
     window.addEventListener('resize', calculatePages);
     return () => window.removeEventListener('resize', calculatePages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMode, parsedPdf, fontSize, lineSpacing, fontFamily]);
 
+  // Navigare ABSOLUTĂ (scrollTo pe baza paginii țintă), nu relativă (scrollBy).
   const goToNextPage = () => {
     if (!parsedPdf) return;
     if (layoutMode === 'page' && readerMainRef.current) {
       if (currentPage < totalHorizontalPages) {
         const next = currentPage + 1;
+        const step = getScrollStep();
         setCurrentPage(next);
-        readerMainRef.current.scrollBy({ left: getScrollStep(), behavior: 'smooth' });
+        readerMainRef.current.scrollTo({ left: (next - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((next / totalHorizontalPages) * 100));
       }
     }
@@ -488,8 +503,9 @@ function App() {
     if (layoutMode === 'page' && readerMainRef.current) {
       if (currentPage > 1) {
         const prev = currentPage - 1;
+        const step = getScrollStep();
         setCurrentPage(prev);
-        readerMainRef.current.scrollBy({ left: -getScrollStep(), behavior: 'smooth' });
+        readerMainRef.current.scrollTo({ left: (prev - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((prev / totalHorizontalPages) * 100));
       }
     }
