@@ -141,6 +141,12 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
+  animation: viewFadeIn 0.3s ease;
+}
+
+@keyframes viewFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Global Header */
@@ -263,10 +269,22 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateY(-1px);
 }
 
+.btn:active {
+  transform: scale(0.94);
+  transition: transform 0.1s ease;
+}
+
 .btn-primary {
   background-color: var(--accent-color);
   border-color: var(--accent-color);
   color: #ffffff !important;
+  animation: btnSelectPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes btnSelectPop {
+  0% { transform: scale(0.88); }
+  55% { transform: scale(1.06); }
+  100% { transform: scale(1); }
 }
 
 .btn-primary:hover {
@@ -463,6 +481,7 @@ h1, h2, h3, h4, h5, h6 {
 .card-progress-bar {
   height: 100%;
   background-color: var(--accent-color);
+  transition: width 0.4s ease;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -476,6 +495,7 @@ h1, h2, h3, h4, h5, h6 {
   max-height: 100vh;
   overflow: hidden;
   position: relative;
+  animation: viewFadeIn 0.3s ease;
 }
 
 /* Reader Main Workspace */
@@ -632,6 +652,13 @@ h1, h2, h3, h4, h5, h6 {
 .theme-btn.active {
   border-color: var(--accent-color);
   transform: scale(1.1);
+  animation: themeSelectPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes themeSelectPop {
+  0% { transform: scale(0.8); }
+  55% { transform: scale(1.25); }
+  100% { transform: scale(1.1); }
 }
 
 .theme-btn-light { background-color: #ffffff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
@@ -749,6 +776,12 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center;
   z-index: 2000;
   backdrop-filter: blur(4px);
+  animation: modalBackdropFadeIn 0.2s ease;
+}
+
+@keyframes modalBackdropFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal-content {
@@ -762,6 +795,12 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  animation: modalContentPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalContentPopIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .modal-header {
@@ -983,7 +1022,7 @@ h1, h2, h3, h4, h5, h6 {
   /* Coloane înguste tip tipografie/Biblie: valoare în `em`, deci se scalează automat
      cu mărimea fontului aleasă de utilizator, păstrând un număr de caractere pe linie
      confortabil la citit. Browserul decide singur câte coloane încap pe ecran. */
-  column-width: 20em;
+  column-width: 14em;
   column-gap: 2.5em;
   max-width: none !important;
   margin: 0;

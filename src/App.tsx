@@ -474,7 +474,7 @@ function App() {
 
           const safePage = Math.min(currentPage, clampedTotal);
           if (safePage !== currentPage) setCurrentPage(safePage);
-          readerMainRef.current.scrollTo({ left: (safePage - 1) * step, behavior: 'auto' });
+          readerMainRef.current.scrollTo({ left: (safePage - 1) * step, behavior: 'smooth' });
         }
       }
     };
@@ -555,8 +555,9 @@ function App() {
   // Dashboard / Upload Screen
   const renderDashboard = () => {
     return (
-      <div className="app-container">
-        {/* Top bar */}
+      <>
+        {/* Top bar - in afara app-container, la fel ca in reader, ca sa se intinda
+            pe toata latimea ecranului si sa arate identic in ambele ecrane */}
         <header className="app-header">
           <div className="brand">
             <span>read-pdf</span>
@@ -570,6 +571,8 @@ function App() {
             </button>
           </div>
         </header>
+
+        <div className="app-container">
 
         {/* Hero Section */}
         <section className="welcome-hero">
@@ -652,7 +655,8 @@ function App() {
             </div>
           </section>
         )}
-      </div>
+        </div>
+      </>
     );
   };
 
