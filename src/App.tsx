@@ -3,6 +3,18 @@ import { parsePdfFile } from './utils/pdfParser';
 import type { ParsedPDF } from './utils/pdfParser';
 import { renderBionicParagraph } from './utils/bionic';
 import { saveParsedPDF, getParsedPDF, deleteParsedPDF } from './utils/db';
+import {
+  signInWithGoogle,
+  signOutUser,
+  subscribeToAuthChanges,
+  fetchCloudBookList,
+  uploadFullBookToCloud,
+  saveCloudBookMetadata,
+  downloadBookContent,
+  deleteFullBookFromCloud,
+  isFirebaseConfigured,
+  type User,
+} from './utils/cloudSync';
 import './App.css';
 
 interface BookMetadata {
@@ -51,6 +63,11 @@ function App() {
   });
   const [recentBooks, setRecentBooks] = useState<BookMetadata[]>([]);
   const [tempProfileName, setTempProfileName] = useState('');
+
+  // --- CLOUD SYNC STATE ---
+  const [cloudUser, setCloudUser] = useState<User | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const progressSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- READER SCROLL STATE ---
   const [scrollPercentage, setScrollPercentage] = useState(0);
@@ -169,6 +186,69 @@ function App() {
     localStorage.setItem('pdf_reader_theme', theme);
   }, [theme]);
 
+  // --------------------------------------------------------------------------
+  // CLOUD SYNC (Firebase) - autentificare + reconciliere lista de carti
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    const unsubscribe = subscribeToAuthChanges(async (user) => {
+      setCloudUser(user);
+      if (!user) return;
+
+      setIsSyncing(true);
+      try {
+        const cloudBooks = await fetchCloudBookList(user.uid);
+
+        // Combinam local + cloud: pentru carti care exista in ambele, pastram
+        // progresul cel mai avansat (max), ca sa nu pierdem progres facut offline
+        // pe un alt device inainte de prima sincronizare.
+        setRecentBooks(prevLocal => {
+          const merged = new Map<string, BookMetadata>();
+          prevLocal.forEach(b => merged.set(b.id, b));
+          cloudBooks.forEach(cb => {
+            const existing = merged.get(cb.id);
+            if (existing) {
+              merged.set(cb.id, {
+                ...existing,
+                progressPercentage: Math.max(existing.progressPercentage, cb.progressPercentage),
+                lastActiveParagraphId: cb.progressPercentage >= existing.progressPercentage
+                  ? cb.lastActiveParagraphId
+                  : existing.lastActiveParagraphId,
+              });
+            } else {
+              merged.set(cb.id, cb);
+            }
+          });
+          const result = Array.from(merged.values());
+          localStorage.setItem('pdf_reader_recent_books', JSON.stringify(result));
+          return result;
+        });
+      } catch (e) {
+        console.error('Eroare la sincronizarea cu cloud-ul:', e);
+      } finally {
+        setIsSyncing(false);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (e) {
+      console.error('Autentificare esuata:', e);
+      alert('Autentificarea cu Google a esuat. Incearca din nou.');
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOutUser();
+    } catch (e) {
+      console.error('Delogare esuata:', e);
+    }
+  };
+
   // Handle page turn shortcuts in page mode
   useEffect(() => {
     if (!parsedPdf || layoutMode !== 'page') return;
@@ -282,6 +362,18 @@ function App() {
       setRecentBooks(updatedRecents);
       localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updatedRecents));
 
+      // Urcam cartea completa in cloud daca userul e autentificat, ca sa fie
+      // disponibila si pe celelalte device-uri fara sa o reincarce manual.
+      if (cloudUser) {
+        const savedMeta = updatedRecents.find(b => b.id === (existingBook ? existingBook.id : bookId));
+        if (savedMeta) {
+          setIsSyncing(true);
+          uploadFullBookToCloud(cloudUser.uid, savedMeta, parsed)
+            .catch(e => console.error('Eroare la urcarea cartii in cloud:', e))
+            .finally(() => setIsSyncing(false));
+        }
+      }
+
     } catch (e) {
       console.error(e);
       alert('A apărut o eroare la procesarea documentului PDF. Asigură-te că fișierul nu este securizat sau corupt.');
@@ -293,7 +385,19 @@ function App() {
     setIsParsing(true);
     setParseProgress(0);
     try {
-      const bookData = await getParsedPDF(id);
+      let bookData = await getParsedPDF(id);
+
+      // Daca nu exista local (ex: pe un device nou, dupa sincronizare), o luam
+      // din cloud si o salvam local pentru acces rapid data viitoare.
+      if (!bookData && cloudUser) {
+        setIsSyncing(true);
+        bookData = await downloadBookContent(cloudUser.uid, id);
+        if (bookData) {
+          await saveParsedPDF(id, bookData);
+        }
+        setIsSyncing(false);
+      }
+
       if (bookData) {
         setParsedPdf(bookData);
         setActiveBookId(id);
@@ -320,7 +424,7 @@ function App() {
           }
         }
       } else {
-        alert('Cartea selectată nu a fost găsită în baza de date locală.');
+        alert('Cartea selectată nu a fost găsită nici local, nici în cloud.');
       }
     } catch (error) {
       console.error(error);
@@ -340,6 +444,12 @@ function App() {
       localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updated));
 
       await deleteParsedPDF(id);
+
+      if (cloudUser) {
+        deleteFullBookFromCloud(cloudUser.uid, id).catch(e =>
+          console.error('Eroare la stergerea din cloud:', e)
+        );
+      }
 
       if (activeBookId === id) {
         setActiveBookId(null);
@@ -415,18 +525,71 @@ function App() {
 
   const updateBookProgress = (paragraphId: string, percent: number) => {
     if (!parsedPdf || !activeBookId) return;
+    let updatedMeta: BookMetadata | null = null;
     const updated = recentBooks.map(b => {
       if (b.id === activeBookId) {
-        return {
+        updatedMeta = {
           ...b,
           progressPercentage: Math.max(b.progressPercentage, percent),
           lastActiveParagraphId: paragraphId
         };
+        return updatedMeta;
       }
       return b;
     });
     setRecentBooks(updated);
     localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updated));
+
+    // Trimitem si in cloud, dar cu debounce (nu la fiecare eveniment de scroll/pagina)
+    // ca sa nu facem sute de scrieri Firestore in timpul citirii.
+    if (cloudUser && updatedMeta) {
+      const metaToSync = updatedMeta;
+      if (progressSyncTimer.current) clearTimeout(progressSyncTimer.current);
+      progressSyncTimer.current = setTimeout(() => {
+        saveCloudBookMetadata(cloudUser.uid, metaToSync).catch(e =>
+          console.error('Eroare la sincronizarea progresului:', e)
+        );
+      }, 1500);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // PAGE MODE PROGRESS TRACKING
+  // --------------------------------------------------------------------------
+  // handleScroll (mai sus) salveaza progresul DOAR cand layoutMode === 'scroll'.
+  // In modul 'page' (Pagini/Coloane) nu exista niciun echivalent care sa apeleze
+  // updateBookProgress -> de-asta nu se retinea NICIODATA unde ai ramas cand
+  // citeai pe coloane, indiferent cat timp stateai pe o pagina. Nu tine de tine,
+  // era pur si simplu neimplementat pentru acest mod.
+  const findVisibleParagraphId = (): string | null => {
+    if (!readerMainRef.current || !parsedPdf) return null;
+    const containerRect = readerMainRef.current.getBoundingClientRect();
+    let closestId: string | null = null;
+    let minDistance = Infinity;
+
+    parsedPdf.paragraphs.forEach(p => {
+      const el = paragraphRefs.current[p.id];
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const isVisible = rect.right > containerRect.left && rect.left < containerRect.right;
+        if (isVisible) {
+          const distance = Math.abs(rect.left - containerRect.left);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestId = p.id;
+          }
+        }
+      }
+    });
+
+    return closestId;
+  };
+
+  const savePageModeProgress = (page: number, total: number) => {
+    const id = findVisibleParagraphId();
+    if (id) {
+      updateBookProgress(id, Math.round((page / total) * 100));
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -475,6 +638,7 @@ function App() {
           const safePage = Math.min(currentPage, clampedTotal);
           if (safePage !== currentPage) setCurrentPage(safePage);
           readerMainRef.current.scrollTo({ left: (safePage - 1) * step, behavior: 'smooth' });
+          setTimeout(() => savePageModeProgress(safePage, clampedTotal), 350);
         }
       }
     };
@@ -494,6 +658,7 @@ function App() {
         setCurrentPage(next);
         readerMainRef.current.scrollTo({ left: (next - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((next / totalHorizontalPages) * 100));
+        setTimeout(() => savePageModeProgress(next, totalHorizontalPages), 350);
       }
     }
   };
@@ -507,6 +672,7 @@ function App() {
         setCurrentPage(prev);
         readerMainRef.current.scrollTo({ left: (prev - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((prev / totalHorizontalPages) * 100));
+        setTimeout(() => savePageModeProgress(prev, totalHorizontalPages), 350);
       }
     }
   };
@@ -563,6 +729,21 @@ function App() {
             <span>read-pdf</span>
           </div>
           <div className="header-actions">
+            {isFirebaseConfigured && (
+              cloudUser ? (
+                <button
+                  className="btn sync-status-btn"
+                  onClick={handleSignOut}
+                  title={`Conectat ca ${cloudUser.displayName || cloudUser.email}. Click pentru deconectare.`}
+                >
+                  {isSyncing ? '⏳ Sincronizare...' : `☁️ ${cloudUser.displayName?.split(' ')[0] || 'Cont'}`}
+                </button>
+              ) : (
+                <button className="btn sync-status-btn" onClick={handleGoogleSignIn} title="Conecteaza-te cu Google pentru sincronizare intre device-uri">
+                  🔗 Sincronizeaza cu Google
+                </button>
+              )
+            )}
             <button className="btn settings-trigger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
@@ -710,6 +891,21 @@ function App() {
           </div>
 
           <div className="reader-topbar-right header-actions">
+            {isFirebaseConfigured && (
+              cloudUser ? (
+                <button
+                  className="btn sync-status-btn"
+                  onClick={handleSignOut}
+                  title={`Conectat ca ${cloudUser.displayName || cloudUser.email}. Click pentru deconectare.`}
+                >
+                  {isSyncing ? '⏳' : '☁️'}
+                </button>
+              ) : (
+                <button className="btn sync-status-btn" onClick={handleGoogleSignIn} title="Conecteaza-te cu Google pentru sincronizare intre device-uri">
+                  🔗
+                </button>
+              )
+            )}
             <button className="btn settings-trigger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
