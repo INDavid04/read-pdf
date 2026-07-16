@@ -7,6 +7,7 @@ import {
 import {
   doc,
   setDoc,
+  getDoc,
   getDocs,
   collection,
   deleteDoc,
@@ -23,6 +24,16 @@ export interface CloudBookMetadata {
   lastReadDate: string;
   progressPercentage: number;
   lastActiveParagraphId: string | null;
+}
+
+export interface CloudUserSettings {
+  name: string;
+  theme: string;
+  fontSize: number;
+  lineSpacing: number;
+  fontFamily: string;
+  isBionic: boolean;
+  layoutMode: 'scroll' | 'page';
 }
 
 // --------------------------------------------------------------------------
@@ -66,6 +77,24 @@ export async function saveCloudBookMetadata(uid: string, metadata: CloudBookMeta
 export async function deleteCloudBookMetadata(uid: string, bookId: string): Promise<void> {
   if (!db) return;
   await deleteDoc(doc(db, 'users', uid, 'books', bookId));
+}
+
+// --------------------------------------------------------------------------
+// USER SETTINGS (Firestore) - nume, tema, font, spatiere, bionic, layout
+// --------------------------------------------------------------------------
+
+export async function fetchCloudSettings(uid: string): Promise<CloudUserSettings | null> {
+  if (!db) return null;
+  const snap = await getDoc(doc(db, 'users', uid, 'settings', 'preferences'));
+  return snap.exists() ? (snap.data() as CloudUserSettings) : null;
+}
+
+export async function saveCloudSettings(uid: string, settings: CloudUserSettings): Promise<void> {
+  if (!db) return;
+  await setDoc(doc(db, 'users', uid, 'settings', 'preferences'), {
+    ...settings,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // --------------------------------------------------------------------------

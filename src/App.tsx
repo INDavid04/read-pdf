@@ -12,6 +12,8 @@ import {
   saveCloudBookMetadata,
   downloadBookContent,
   deleteFullBookFromCloud,
+  fetchCloudSettings,
+  saveCloudSettings,
   isFirebaseConfigured,
   type User,
 } from './utils/cloudSync';
@@ -68,6 +70,8 @@ function App() {
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const progressSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settingsSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSettingsPush = useRef(false);
 
   // --- READER SCROLL STATE ---
   const [scrollPercentage, setScrollPercentage] = useState(0);
@@ -223,6 +227,21 @@ function App() {
           localStorage.setItem('pdf_reader_recent_books', JSON.stringify(result));
           return result;
         });
+
+        // Aducem si preferintele (nume, tema, font etc.) si le aplicam local,
+        // ca sa fie identice pe orice device conectat cu acelasi cont Google.
+        const cloudSettings = await fetchCloudSettings(user.uid);
+        if (cloudSettings) {
+          skipNextSettingsPush.current = true; // nu retrimite imediat ce tocmai am primit
+          setUserProfile(prev => ({ ...prev, name: cloudSettings.name }));
+          setTempProfileName(cloudSettings.name);
+          setTheme(cloudSettings.theme);
+          setFontSize(cloudSettings.fontSize);
+          setLineSpacing(cloudSettings.lineSpacing);
+          setFontFamily(cloudSettings.fontFamily);
+          setIsBionic(cloudSettings.isBionic);
+          setLayoutMode(cloudSettings.layoutMode);
+        }
       } catch (e) {
         console.error('Eroare la sincronizarea cu cloud-ul:', e);
       } finally {
@@ -231,6 +250,28 @@ function App() {
     });
     return unsubscribe;
   }, []);
+
+  // Trimite preferintele in cloud (debounced) de fiecare data cand se schimba,
+  // ca sa fie aceleasi data viitoare cand te loghezi pe alt device.
+  useEffect(() => {
+    if (!cloudUser) return;
+    if (skipNextSettingsPush.current) {
+      skipNextSettingsPush.current = false;
+      return;
+    }
+    if (settingsSyncTimer.current) clearTimeout(settingsSyncTimer.current);
+    settingsSyncTimer.current = setTimeout(() => {
+      saveCloudSettings(cloudUser.uid, {
+        name: userProfile.name,
+        theme,
+        fontSize,
+        lineSpacing,
+        fontFamily,
+        isBionic,
+        layoutMode,
+      }).catch(e => console.error('Eroare la sincronizarea preferintelor:', e));
+    }, 1000);
+  }, [cloudUser, userProfile.name, theme, fontSize, lineSpacing, fontFamily, isBionic, layoutMode]);
 
   const handleGoogleSignIn = async () => {
     try {
