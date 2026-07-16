@@ -933,12 +933,11 @@ function App() {
               } as React.CSSProperties}
             >
               {parsedPdf.paragraphs.map((p) => {
-                  const isFragment = p.text.trim().length < 25; // linii scurte gen numere de pagina/antete, nu paragrafe reale
                   return (
                     <div 
                       key={p.id}
                       ref={el => { paragraphRefs.current[p.id] = el; }}
-                      className={`reader-paragraph-wrapper ${isFragment ? 'reader-paragraph-fragment' : ''}`}
+                      className="reader-paragraph-wrapper"
                     >
                       {layoutMode === 'scroll' && (
                         <span className="page-indicator-badge">

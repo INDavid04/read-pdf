@@ -35,6 +35,28 @@ export async function parsePdfFile(file: File, onProgress?: (progress: number) =
   const paragraphs: Paragraph[] = [];
   let paragraphCounter = 0;
 
+  // IMPORTANT: acest text "curent" e tinut in AFARA buclei de pagini si NU se
+  // mai forteaza sa fie salvat la finalul fiecarei pagini. Inainte, orice
+  // propozitie care se intampla sa fie taiata exact la granita dintre doua
+  // pagini PDF (foarte frecvent) devenea automat DOUA paragrafe separate:
+  // unul minuscul la finalul unei pagini si continuarea lui, la fel de
+  // minuscula, la inceputul paginii urmatoare. Vizual, acel "paragraf" de
+  // 2-3 cuvinte primea acelasi spatiu gol ca un paragraf normal -> exact
+  // golurile ciudate observate in citire.
+  let runningText = '';
+  let runningStartPage = 1;
+
+  const pushRunningParagraph = () => {
+    if (runningText.trim().length > 0) {
+      paragraphs.push({
+        id: `p-${runningStartPage}-${paragraphCounter++}`,
+        text: cleanText(runningText),
+        pageNumber: runningStartPage,
+      });
+    }
+    runningText = '';
+  };
+
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
@@ -85,52 +107,49 @@ export async function parsePdfFile(file: File, onProgress?: (progress: number) =
       // Sort lines top-to-bottom (Y is descending)
       currentPageLines.sort((a, b) => b.y - a.y);
 
-      let currentParagraphText = '';
-      
       for (let i = 0; i < currentPageLines.length; i++) {
         const line = currentPageLines[i];
-        
-        if (currentParagraphText === '') {
-          currentParagraphText = line.text;
+
+        if (runningText === '') {
+          runningText = line.text;
+          runningStartPage = pageNum;
+          continue;
+        }
+
+        let isParagraphBreak: boolean;
+        if (i === 0) {
+          // Prima linie a acestei pagini: nu avem coordonate Y comparabile cu
+          // pagina anterioara (sistemul de coordonate se reseteaza per pagina),
+          // deci decidem DOAR pe baza de punctuatie: daca textul anterior se
+          // termina clar cu semn de final de propozitie SI linia noua incepe
+          // cu majuscula, e probabil un paragraf nou. Altfel, e continuarea
+          // aceleiasi propozitii taiate de saltul de pagina -> le unim.
+          const endsWithSentencePunct = /[.!?"'\u201D\u2019]$/.test(runningText.trim());
+          const startsWithCapital = /^[A-Z"\u201C]/.test(line.text.trim());
+          isParagraphBreak = endsWithSentencePunct && startsWithCapital;
         } else {
           const prevLine = currentPageLines[i - 1];
           const verticalGap = prevLine.y - line.y - prevLine.height;
-          
           // If vertical gap is greater than 1.5 times the line height, we treat it as a paragraph break.
           // Or if the line ends with common sentence end characters and the next starts with capital.
-          const isParagraphBreak = verticalGap > (prevLine.height * 1.5) || 
-                                   (currentParagraphText.trim().endsWith('.') && /^[A-Z]/.test(line.text.trim()));
+          isParagraphBreak = verticalGap > (prevLine.height * 1.5) ||
+                              (runningText.trim().endsWith('.') && /^[A-Z]/.test(line.text.trim()));
+        }
 
-          if (isParagraphBreak) {
-            // Push previous paragraph
-            if (currentParagraphText.trim().length > 0) {
-              paragraphs.push({
-                id: `p-${pageNum}-${paragraphCounter++}`,
-                text: cleanText(currentParagraphText),
-                pageNumber: pageNum,
-              });
-            }
-            currentParagraphText = line.text;
+        if (isParagraphBreak) {
+          pushRunningParagraph();
+          runningText = line.text;
+          runningStartPage = pageNum;
+        } else {
+          // Continue paragraph
+          // If the last word of the paragraph doesn't end with hyphen, add a space
+          const endsWithHyphen = runningText.trim().endsWith('-');
+          if (endsWithHyphen) {
+            runningText = runningText.trim().slice(0, -1) + line.text;
           } else {
-            // Continue paragraph
-            // If the last word of the paragraph doesn't end with hyphen, add a space
-            const endsWithHyphen = currentParagraphText.trim().endsWith('-');
-            if (endsWithHyphen) {
-              currentParagraphText = currentParagraphText.trim().slice(0, -1) + line.text;
-            } else {
-              currentParagraphText += ' ' + line.text;
-            }
+            runningText += ' ' + line.text;
           }
         }
-      }
-      
-      // Push final paragraph on the page
-      if (currentParagraphText.trim().length > 0) {
-        paragraphs.push({
-          id: `p-${pageNum}-${paragraphCounter++}`,
-          text: cleanText(currentParagraphText),
-          pageNumber: pageNum,
-        });
       }
     }
 
@@ -140,6 +159,9 @@ export async function parsePdfFile(file: File, onProgress?: (progress: number) =
       onProgress(percentage);
     }
   }
+
+  // Push whatever paragraph remained accumulated after the very last page
+  pushRunningParagraph();
 
   // Fallback title to filename if metadata is missing
   let title = file.name.replace(/\.[^/.]+$/, "");
