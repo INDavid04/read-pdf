@@ -1035,9 +1035,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .reader-article.page-mode .reader-paragraph-wrapper {
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
+  padding: 0;
+  border-radius: 0;
+  break-inside: auto;
+  -webkit-column-break-inside: auto;
+}
+
+.reader-article.page-mode .reader-paragraph-wrapper:hover {
+  background-color: transparent;
 }
 
 @media (max-width: 768px) {

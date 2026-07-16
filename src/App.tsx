@@ -68,6 +68,7 @@ function App() {
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const progressSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- READER SCROLL STATE ---
   const [scrollPercentage, setScrollPercentage] = useState(0);
@@ -495,11 +496,18 @@ function App() {
     const target = e.currentTarget;
     const progress = (target.scrollTop / (target.scrollHeight - target.clientHeight)) * 100;
     const currentPercent = Math.round(progress || 0);
-    setScrollPercentage(currentPercent);
+    setScrollPercentage(currentPercent); // ieftin, ramane instant la fiecare scroll
 
-    // Find the currently visible paragraph to update the bookmark/active paragraph
-    if (parsedPdf) {
-      const containerRect = target.getBoundingClientRect();
+    // PARTEA SCUMPA: gasirea paragrafului vizibil parcurge TOATE paragrafele
+    // cartii si calculeaza getBoundingClientRect() pentru fiecare. La o carte
+    // de sute de pagini, rulat la fiecare eveniment de scroll (zeci/secunda),
+    // asta era principala cauza de "lag" in timpul citirii. O rulam acum doar
+    // dupa ce scroll-ul s-a oprit (150ms fara alt eveniment), nu la fiecare pixel.
+    if (!parsedPdf) return;
+    if (scrollSearchTimer.current) clearTimeout(scrollSearchTimer.current);
+    scrollSearchTimer.current = setTimeout(() => {
+      if (!readerMainRef.current) return;
+      const containerRect = readerMainRef.current.getBoundingClientRect();
       const containerMiddle = containerRect.top + containerRect.height / 3;
 
       let closestId: string | null = null;
@@ -520,7 +528,7 @@ function App() {
       if (closestId) {
         updateBookProgress(closestId, currentPercent);
       }
-    }
+    }, 150);
   };
 
   const updateBookProgress = (paragraphId: string, percent: number) => {
@@ -643,8 +651,19 @@ function App() {
       }
     };
     setTimeout(calculatePages, 200);
-    window.addEventListener('resize', calculatePages);
-    return () => window.removeEventListener('resize', calculatePages);
+    // Debounce resize: fara asta, calculatePages (care recalculeaza scrollWidth
+    // si repozitioneaza scroll-ul) rula la FIECARE pixel de redimensionare a
+    // ferestrei, ceea ce e inutil de scump.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(calculatePages, 200);
+    };
+    window.addEventListener('resize', debouncedResize);
+    return () => {
+      window.removeEventListener('resize', debouncedResize);
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMode, parsedPdf, fontSize, lineSpacing, fontFamily]);
 
