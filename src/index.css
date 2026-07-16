@@ -543,6 +543,16 @@ h1, h2, h3, h4, h5, h6 {
   transition: background-color 0.2s ease;
 }
 
+/* Fragmente scurte (numere de pagina, antete ramase din extragerea PDF) -
+   NU sunt paragrafe reale, deci nu merita acelasi spatiu gol din jur ca un
+   paragraf normal. Textul ramane neatins, doar spatiul vizual e redus. */
+.reader-paragraph-fragment {
+  margin-bottom: 0.35rem;
+  padding: 0.15rem 0.75rem;
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+
 .reader-paragraph-wrapper:hover {
   background-color: var(--bg-secondary);
 }
