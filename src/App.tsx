@@ -149,17 +149,8 @@ function App() {
           if (metadata.lastActiveParagraphId) {
             const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
             if (p) {
-              setCurrentPage(p.pageNumber);
-              
-              // Scroll in scroll mode after a brief timeout
-              setTimeout(() => {
-                if (readerMainRef.current) {
-                  const element = paragraphRefs.current[p.id];
-                  if (element) {
-                    element.scrollIntoView({ behavior: 'auto', block: 'center' });
-                  }
-                }
-              }, 500);
+              if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
+              restoreReadingPosition(p.id, 500);
             }
           }
         }
@@ -261,10 +252,10 @@ function App() {
         return;
       }
 
-      if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      if ((e.key === ' ' && !e.shiftKey) || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
         goToNextPage();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || (e.key === ' ' && e.shiftKey)) {
         e.preventDefault();
         goToPrevPage();
       }
@@ -326,14 +317,7 @@ function App() {
         await deleteParsedPDF(bookId);
 
         // Restore position
-        setTimeout(() => {
-          if (existingBook.lastActiveParagraphId && readerMainRef.current) {
-            const element = paragraphRefs.current[existingBook.lastActiveParagraphId];
-            if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }
-        }, 500);
+        restoreReadingPosition(existingBook.lastActiveParagraphId, 500);
       } else {
         const newBook: BookMetadata = {
           id: bookId,
@@ -410,17 +394,8 @@ function App() {
           if (metadata.lastActiveParagraphId) {
             const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
             if (p) {
-              setCurrentPage(p.pageNumber);
-              
-              // Scroll to position in scroll mode
-              setTimeout(() => {
-                if (readerMainRef.current) {
-                  const element = paragraphRefs.current[p.id];
-                  if (element) {
-                    element.scrollIntoView({ behavior: 'auto', block: 'center' });
-                  }
-                }
-              }, 300);
+              if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
+              restoreReadingPosition(p.id, 400);
             }
           }
         }
@@ -598,6 +573,40 @@ function App() {
     if (id) {
       updateBookProgress(id, Math.round((page / total) * 100));
     }
+  };
+
+  // --------------------------------------------------------------------------
+  // RESTORE READING POSITION (scroll SAU coloane)
+  // --------------------------------------------------------------------------
+  // BUG anterior: la restaurare, codul seta currentPage = p.pageNumber (numarul
+  // paginii ORIGINALE din PDF), dar in modul coloane currentPage inseamna cu
+  // totul altceva (indexul "ecranului" orizontal din text-ul reflow-uit) ->
+  // sarea mereu intr-un loc gresit. Acum calculam exact la ce ecran orizontal
+  // se afla paragraful, pe baza pozitiei lui reale in DOM dupa layout.
+  const restoreReadingPosition = (paragraphId: string | null, delay = 500) => {
+    if (!paragraphId) return;
+    setTimeout(() => {
+      const element = paragraphRefs.current[paragraphId];
+      if (!element || !readerMainRef.current) return;
+
+      if (layoutMode === 'scroll') {
+        element.scrollIntoView({ behavior: 'auto', block: 'center' });
+        return;
+      }
+
+      const article = readerMainRef.current.querySelector('.reader-article') as HTMLElement | null;
+      if (!article) return;
+      const step = getScrollStep();
+      if (step <= 0) return;
+
+      const articleRect = article.getBoundingClientRect();
+      const elRect = element.getBoundingClientRect();
+      const offsetLeft = (elRect.left - articleRect.left) + readerMainRef.current.scrollLeft;
+      const targetPage = Math.max(1, Math.floor(offsetLeft / step) + 1);
+
+      setCurrentPage(targetPage);
+      readerMainRef.current.scrollTo({ left: (targetPage - 1) * step, behavior: 'auto' });
+    }, delay);
   };
 
   // --------------------------------------------------------------------------
