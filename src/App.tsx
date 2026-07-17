@@ -24,7 +24,7 @@ interface BookMetadata {
   lastReadDate: string;
   progressPercentage: number;
   lastActiveParagraphId: string | null;
-  updatedAtMs?: number;
+  updatedAtMs: number;
 }
 
 interface UserProfile {
@@ -355,7 +355,9 @@ function App() {
         const savedMeta = updatedRecents.find(b => b.id === (existingBook ? existingBook.id : bookId));
         if (savedMeta) {
           setIsSyncing(true);
-          uploadFullBookToCloud(cloudUser.uid, savedMeta, parsed)
+          // updatedAtMs poate lipsi la carti mai vechi (adaugate inainte de acest
+          // camp) - punem un fallback ca sa satisfacem tipul cerut de upload.
+          uploadFullBookToCloud(cloudUser.uid, { ...savedMeta, updatedAtMs: savedMeta.updatedAtMs ?? Date.now() }, parsed)
             .catch(e => console.error('Eroare la urcarea cartii in cloud:', e))
             .finally(() => setIsSyncing(false));
         }
