@@ -24,6 +24,7 @@ interface BookMetadata {
   lastReadDate: string;
   progressPercentage: number;
   lastActiveParagraphId: string | null;
+  updatedAtMs?: number;
 }
 
 interface UserProfile {
@@ -192,21 +193,21 @@ function App() {
         const cloudBooks = await fetchCloudBookList(user.uid);
 
         // Combinam local + cloud: pentru carti care exista in ambele, pastram
-        // progresul cel mai avansat (max), ca sa nu pierdem progres facut offline
-        // pe un alt device inainte de prima sincronizare.
+        // versiunea MAI RECENTA (dupa timestamp), nu pe cea cu procent mai mare -
+        // altfel, daca revii cu bun-stiinta la inceputul cartii pe un device,
+        // sincronizarea ar readuce procentul vechi, mai mare, de pe celalalt device.
         setRecentBooks(prevLocal => {
           const merged = new Map<string, BookMetadata>();
           prevLocal.forEach(b => merged.set(b.id, b));
           cloudBooks.forEach(cb => {
             const existing = merged.get(cb.id);
             if (existing) {
-              merged.set(cb.id, {
-                ...existing,
-                progressPercentage: Math.max(existing.progressPercentage, cb.progressPercentage),
-                lastActiveParagraphId: cb.progressPercentage >= existing.progressPercentage
-                  ? cb.lastActiveParagraphId
-                  : existing.lastActiveParagraphId,
-              });
+              const localTime = existing.updatedAtMs || 0;
+              const cloudTime = cb.updatedAtMs || 0;
+              if (cloudTime > localTime) {
+                merged.set(cb.id, { ...existing, ...cb });
+              }
+              // altfel pastram local-ul neschimbat, e mai recent
             } else {
               merged.set(cb.id, cb);
             }
@@ -326,6 +327,7 @@ function App() {
           lastReadDate: now,
           progressPercentage: 0,
           lastActiveParagraphId: parsed.paragraphs[0]?.id || null,
+          updatedAtMs: Date.now(),
         };
         updatedRecents = [newBook, ...recentBooks];
 
@@ -513,8 +515,12 @@ function App() {
       if (b.id === activeBookId) {
         updatedMeta = {
           ...b,
-          progressPercentage: Math.max(b.progressPercentage, percent),
-          lastActiveParagraphId: paragraphId
+          // Reflectam pozitia CURENTA, nu doar maximul atins vreodata - daca
+          // dai scroll inapoi (ex. reiei cartea de la inceput), procentul
+          // trebuie sa scada la fel de firesc cum a crescut.
+          progressPercentage: percent,
+          lastActiveParagraphId: paragraphId,
+          updatedAtMs: Date.now(),
         };
         return updatedMeta;
       }
