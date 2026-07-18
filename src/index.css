@@ -306,6 +306,11 @@ h1, h2, h3, h4, h5, h6 {
   white-space: nowrap;
 }
 
+.hamburger-btn {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
 .btn-icon-only {
   padding: 0.6rem;
   border-radius: 50%;
@@ -549,11 +554,6 @@ h1, h2, h3, h4, h5, h6 {
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   position: relative;
-  transition: background-color 0.2s ease;
-}
-
-.reader-paragraph-wrapper:hover {
-  background-color: var(--bg-secondary);
 }
 
 .reader-paragraph-wrapper.spoken-active {
@@ -651,8 +651,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .theme-btn {
-  height: 38px;
-  border-radius: 50%;
+  height: 44px;
+  border-radius: 10px;
   border: 2px solid transparent;
   cursor: pointer;
   transition: transform 0.2s ease, border-color 0.2s ease;

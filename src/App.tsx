@@ -925,26 +925,28 @@ function App() {
             <span>read-pdf</span>
           </div>
           <div className="header-actions">
-            {isFirebaseConfigured && (
+            {isFirebaseConfigured ? (
               cloudUser ? (
                 <button
                   className="btn sync-status-btn"
                   onClick={handleSignOut}
                   title={`Conectat ca ${cloudUser.displayName || cloudUser.email}. Click pentru deconectare.`}
                 >
-                  {isSyncing ? '⏳ Sincronizare...' : `☁️ ${cloudUser.displayName?.split(' ')[0] || 'Cont'}`}
+                  {isSyncing ? '⏳ Sincronizare...' : `☁️ ${getGreetingText()}`}
                 </button>
               ) : (
                 <button className="btn sync-status-btn" onClick={handleGoogleSignIn} title="Conecteaza-te cu Google pentru sincronizare intre device-uri">
-                  🔗 Sincronizeaza cu Google
+                  🔗 {getGreetingText()}
                 </button>
               )
+            ) : (
+              <span className="user-badge">{getGreetingText()}</span>
             )}
-            <button className="btn settings-trigger-btn" onClick={() => {
+            <button className="btn btn-icon-only hamburger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
             }} title="Deschide Setări & Personalizare">
-              {getGreetingText()}
+              ☰
             </button>
           </div>
         </header>
@@ -1094,26 +1096,28 @@ function App() {
           </div>
 
           <div className="reader-topbar-right header-actions">
-            {isFirebaseConfigured && (
+            {isFirebaseConfigured ? (
               cloudUser ? (
                 <button
                   className="btn sync-status-btn"
                   onClick={handleSignOut}
                   title={`Conectat ca ${cloudUser.displayName || cloudUser.email}. Click pentru deconectare.`}
                 >
-                  {isSyncing ? '⏳' : '☁️'}
+                  {isSyncing ? '⏳ Sincronizare...' : `☁️ ${getGreetingText()}`}
                 </button>
               ) : (
                 <button className="btn sync-status-btn" onClick={handleGoogleSignIn} title="Conecteaza-te cu Google pentru sincronizare intre device-uri">
-                  🔗
+                  🔗 {getGreetingText()}
                 </button>
               )
+            ) : (
+              <span className="user-badge">{getGreetingText()}</span>
             )}
-            <button className="btn settings-trigger-btn" onClick={() => {
+            <button className="btn btn-icon-only hamburger-btn" onClick={() => {
               setTempProfileName(userProfile.name);
               setShowProfileModal(true);
             }} title="Deschide Setări & Personalizare">
-              {getGreetingText()}
+              ☰
             </button>
           </div>
         </header>
