@@ -36,6 +36,13 @@ interface UserProfile {
 
 const FONT_SIZES = [16, 18, 20, 24, 28, 32, 36];
 
+// In modul Coloane, randam intreaga carte deodata era principala cauza de
+// incetineala la carti mari (1000+ pagini) - browserul trebuie sa calculeze
+// layout-ul CSS multi-coloana pentru tot continutul simultan. Impartim cartea
+// in "bucati" de PAGE_CHUNK_SIZE pagini originale din PDF si randam DOAR
+// bucata curenta (+ trecem la urmatoarea/anterioara cand ajungi la capat).
+const PAGE_CHUNK_SIZE = 150;
+
 function App() {
   // --- APP STATE ---
   const [parsedPdf, setParsedPdf] = useState<ParsedPDF | null>(null);
@@ -54,6 +61,7 @@ function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [layoutMode, setLayoutMode] = useState<'scroll' | 'page'>('scroll');
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageChunkIndex, setPageChunkIndex] = useState<number>(0);
 
   // --- PROFILE & SYNC STATE ---
   const [userProfile, setUserProfile] = useState<UserProfile>({
@@ -75,6 +83,16 @@ function App() {
   const [scrollPercentage, setScrollPercentage] = useState(0);
   const readerMainRef = useRef<HTMLDivElement>(null);
   const paragraphRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // Marcheaza momentul in care setarile INITIALE (din localStorage) au fost
+  // efectiv aplicate in state. Fara acest flag, efectele de mai jos (care
+  // salveaza tema/setarile in localStorage la orice schimbare) rulau si ele
+  // la PRIMA randare, cand state-ul inca avea valorile default (setTheme/
+  // setLayoutMode etc. din efectul de incarcare nu se aplicasera inca) -
+  // suprascriind valorile reale salvate anterior cu default-uri, INAINTE ca
+  // acestea sa apuce sa fie citite si afisate. De-asta parea ca "nimic nu se
+  // salveaza" desi salvarea propriu-zisa functiona corect.
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   // --------------------------------------------------------------------------
   // INITIAL LOADING & SYNC LOGIC
@@ -107,6 +125,7 @@ function App() {
     }
 
     // 3. Load reading settings from localStorage
+    let loadedLayoutMode: 'scroll' | 'page' = 'scroll';
     const savedSettings = localStorage.getItem('pdf_reader_settings');
     if (savedSettings) {
       try {
@@ -115,7 +134,10 @@ function App() {
         if (settings.lineSpacing) setLineSpacing(settings.lineSpacing);
         if (settings.fontFamily) setFontFamily(settings.fontFamily);
         if (settings.isBionic !== undefined) setIsBionic(settings.isBionic);
-        if (settings.layoutMode !== undefined) setLayoutMode(settings.layoutMode);
+        if (settings.layoutMode !== undefined) {
+          setLayoutMode(settings.layoutMode);
+          loadedLayoutMode = settings.layoutMode;
+        }
       } catch (e) {
         console.error('Failed to parse settings', e);
       }
@@ -131,11 +153,24 @@ function App() {
     const savedActiveId = localStorage.getItem('pdf_reader_active_book_id');
     if (savedActiveId && recents.some(b => b.id === savedActiveId)) {
       setActiveBookId(savedActiveId);
-      loadBookOnStartup(savedActiveId, recents);
+      // IMPORTANT: trecem loadedLayoutMode ca parametru explicit, NU ne bazam
+      // pe state-ul "layoutMode" din React - la acest moment (tot in interiorul
+      // efectului initial), setLayoutMode(...) de mai sus inca nu s-a aplicat
+      // (actualizarile de state sunt asincrone), deci orice cod care ar citi
+      // "layoutMode" chiar acum ar vedea inca valoarea default ('scroll'),
+      // indiferent ce era salvat cu adevarat -> exact motivul pentru care
+      // pozitia se restaura gresit la refresh, desi modul se salva corect.
+      loadBookOnStartup(savedActiveId, recents, loadedLayoutMode);
     }
+
+    // Abia ACUM marcam hidratarea ca fiind completa - toate setarile reale
+    // au fost programate spre aplicare (impreuna, in acelasi batch). Efectele
+    // de mai jos vor rula din nou dupa ce randarea reflecta aceste valori,
+    // in loc sa scrie in localStorage valorile default de dinainte de incarcare.
+    setHasHydrated(true);
   }, []);
 
-  const loadBookOnStartup = async (id: string, recentsList: BookMetadata[]) => {
+  const loadBookOnStartup = async (id: string, recentsList: BookMetadata[], modeAtLoad: 'scroll' | 'page') => {
     setIsParsing(true);
     setParseProgress(0);
     try {
@@ -150,8 +185,8 @@ function App() {
           if (metadata.lastActiveParagraphId) {
             const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
             if (p) {
-              if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
-              restoreReadingPosition(p.id, 500);
+              if (modeAtLoad === 'scroll') setCurrentPage(p.pageNumber);
+              restoreReadingPosition(p.id, 500, modeAtLoad, bookData);
             }
           }
         }
@@ -168,16 +203,18 @@ function App() {
 
   // Sync settings back to localStorage whenever they change
   useEffect(() => {
+    if (!hasHydrated) return; // nu suprascrie inainte ca setarile reale sa fie incarcate
     const settings = { fontSize, lineSpacing, fontFamily, isBionic, layoutMode };
     localStorage.setItem('pdf_reader_settings', JSON.stringify(settings));
-  }, [fontSize, lineSpacing, fontFamily, isBionic, layoutMode]);
+  }, [hasHydrated, fontSize, lineSpacing, fontFamily, isBionic, layoutMode]);
 
   // Sync theme to the html/body element
   useEffect(() => {
     document.body.className = '';
     document.body.classList.add(`theme-${theme}`);
+    if (!hasHydrated) return; // clasa se aplica mereu, dar NU suprascriem localStorage inainte de hidratare
     localStorage.setItem('pdf_reader_theme', theme);
-  }, [theme]);
+  }, [hasHydrated, theme]);
 
   // --------------------------------------------------------------------------
   // CLOUD SYNC (Firebase) - autentificare + reconciliere lista de carti
@@ -318,7 +355,7 @@ function App() {
         await deleteParsedPDF(bookId);
 
         // Restore position
-        restoreReadingPosition(existingBook.lastActiveParagraphId, 500);
+        restoreReadingPosition(existingBook.lastActiveParagraphId, 500, undefined, parsed);
       } else {
         const newBook: BookMetadata = {
           id: bookId,
@@ -399,7 +436,7 @@ function App() {
             const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
             if (p) {
               if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
-              restoreReadingPosition(p.id, 400);
+              restoreReadingPosition(p.id, 400, undefined, bookData);
             }
           }
         }
@@ -517,9 +554,6 @@ function App() {
       if (b.id === activeBookId) {
         updatedMeta = {
           ...b,
-          // Reflectam pozitia CURENTA, nu doar maximul atins vreodata - daca
-          // dai scroll inapoi (ex. reiei cartea de la inceput), procentul
-          // trebuie sa scada la fel de firesc cum a crescut.
           progressPercentage: percent,
           lastActiveParagraphId: paragraphId,
           updatedAtMs: Date.now(),
@@ -552,36 +586,106 @@ function App() {
   // updateBookProgress -> de-asta nu se retinea NICIODATA unde ai ramas cand
   // citeai pe coloane, indiferent cat timp stateai pe o pagina. Nu tine de tine,
   // era pur si simplu neimplementat pentru acest mod.
-  const findVisibleParagraphId = (): string | null => {
+  const findVisibleParagraphId = (mode: 'scroll' | 'page' = layoutMode): string | null => {
     if (!readerMainRef.current || !parsedPdf) return null;
     const containerRect = readerMainRef.current.getBoundingClientRect();
     let closestId: string | null = null;
     let minDistance = Infinity;
 
-    parsedPdf.paragraphs.forEach(p => {
-      const el = paragraphRefs.current[p.id];
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        const isVisible = rect.right > containerRect.left && rect.left < containerRect.right;
-        if (isVisible) {
-          const distance = Math.abs(rect.left - containerRect.left);
+    if (mode === 'scroll') {
+      // In scroll, cautam paragraful cel mai apropiat de mijlocul VERTICAL al ecranului.
+      const containerMiddle = containerRect.top + containerRect.height / 3;
+      parsedPdf.paragraphs.forEach(p => {
+        const el = paragraphRefs.current[p.id];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          const distance = Math.abs(rect.top - containerMiddle);
           if (distance < minDistance) {
             minDistance = distance;
             closestId = p.id;
           }
         }
-      }
-    });
+      });
+    } else {
+      // In modul coloane, cautam paragraful vizibil cel mai apropiat de marginea
+      // stanga a ecranului (verificare ORIZONTALA, are sens doar cand paragrafele
+      // sunt asezate in coloane, nu stivuite vertical ca in scroll).
+      parsedPdf.paragraphs.forEach(p => {
+        const el = paragraphRefs.current[p.id];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          const isVisible = rect.right > containerRect.left && rect.left < containerRect.right;
+          if (isVisible) {
+            const distance = Math.abs(rect.left - containerRect.left);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestId = p.id;
+            }
+          }
+        }
+      });
+    }
 
     return closestId;
   };
 
-  const savePageModeProgress = (page: number, total: number) => {
+  const savePageModeProgress = () => {
     const id = findVisibleParagraphId();
-    if (id) {
-      updateBookProgress(id, Math.round((page / total) * 100));
+    if (id && parsedPdf && parsedPdf.paragraphs.length > 1) {
+      // Procentul e calculat DIN INDEXUL GLOBAL al paragrafului in carte,
+      // nu din pagina curenta/total (care acum sunt relative la bucata
+      // randata) - altfel procentul ar sari haotic intre 0-100% la fiecare
+      // bucata, in loc sa reflecte progresul real prin toata cartea.
+      const globalIndex = parsedPdf.paragraphs.findIndex(p => p.id === id);
+      const percent = globalIndex >= 0
+        ? Math.round((globalIndex / (parsedPdf.paragraphs.length - 1)) * 100)
+        : 0;
+      updateBookProgress(id, percent);
     }
   };
+
+  // --------------------------------------------------------------------------
+  // AUTOSAVE PERIODIC (plasa de siguranta)
+  // --------------------------------------------------------------------------
+  // In loc sa depindem DOAR de "a prinde exact momentul potrivit" (scroll
+  // debounce + flush la iesire), salvam pozitia curenta la fiecare 2 secunde,
+  // cat timp o carte e deschisa - complet independent de evenimente de
+  // scroll/navigare. Simplu si robust: indiferent ce se intampla (inchizi
+  // tab-ul, dai refresh, navighezi altfel decat prin butonul standard), nu
+  // poti pierde mai mult de ~2 secunde de progres.
+  //
+  // Optimizare: sarim peste cautarea costisitoare (parcurgerea tuturor
+  // paragrafelor) daca pozitia NU s-a schimbat deloc fata de ultima verificare
+  // (ex. stai pe loc si citesti, fara sa dai scroll/pagina) - un simplu
+  // numar comparat la fiecare 2 secunde e practic gratuit.
+  const lastCheckedScrollPos = useRef<number>(-1);
+  const saveCurrentProgress = () => {
+    if (!parsedPdf || !activeBookId || !readerMainRef.current) return;
+    const currentPos = layoutMode === 'scroll'
+      ? readerMainRef.current.scrollTop
+      : readerMainRef.current.scrollLeft;
+
+    if (currentPos === lastCheckedScrollPos.current) return; // nu s-a miscat nimic, nu recalculam
+    lastCheckedScrollPos.current = currentPos;
+
+    if (layoutMode === 'scroll') {
+      const id = findVisibleParagraphId('scroll');
+      if (id) {
+        const target = readerMainRef.current;
+        const progress = (target.scrollTop / (target.scrollHeight - target.clientHeight)) * 100;
+        updateBookProgress(id, Math.round(progress || 0));
+      }
+    } else {
+      savePageModeProgress();
+    }
+  };
+
+  useEffect(() => {
+    if (!parsedPdf) return;
+    const interval = setInterval(saveCurrentProgress, 2000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedPdf, activeBookId, layoutMode, pageChunkIndex]);
 
   // --------------------------------------------------------------------------
   // RESTORE READING POSITION (scroll SAU coloane)
@@ -591,13 +695,37 @@ function App() {
   // totul altceva (indexul "ecranului" orizontal din text-ul reflow-uit) ->
   // sarea mereu intr-un loc gresit. Acum calculam exact la ce ecran orizontal
   // se afla paragraful, pe baza pozitiei lui reale in DOM dupa layout.
-  const restoreReadingPosition = (paragraphId: string | null, delay = 500) => {
-    if (!paragraphId) return;
+  //
+  // De cand am introdus randarea pe bucati (PAGE_CHUNK_SIZE), trebuie intai
+  // sa comutam pe bucata care contine paragraful tinta, INAINTE sa calculam
+  // pozitia orizontala - altfel paragraful nici nu exista in DOM.
+  const restoreReadingPosition = (paragraphId: string | null, delay = 500, modeOverride?: 'scroll' | 'page', pdfDataOverride?: ParsedPDF) => {
+    // IMPORTANT: folosim pdfDataOverride (transmis explicit) in loc sa ne
+    // bazam pe "parsedPdf" din closure. Cand aceasta functie e apelata din
+    // loadBookOnStartup/loadBookFromHistory (chiar dupa un setParsedPdf(...)),
+    // closure-ul lui restoreReadingPosition ramane "inghetat" la randarea in
+    // care a fost creat - unde parsedPdf era inca null (cartea nu era inca
+    // incarcata) - INDIFERENT ca setParsedPdf a fost apelat ulterior in acea
+    // executie. Verificarea "if (!parsedPdf) return" ar iesi mereu tacut,
+    // fara sa restaureze nimic - exact motivul pentru care sarea pe o pagina
+    // "aleatoare" (de fapt: nicio restaurare nu se intampla deloc).
+    const pdfData = pdfDataOverride ?? parsedPdf;
+    if (!paragraphId || !pdfData) return;
+    const mode = modeOverride ?? layoutMode;
+
+    if (mode === 'page') {
+      const targetPara = pdfData.paragraphs.find(p => p.id === paragraphId);
+      if (targetPara) {
+        const targetChunk = Math.floor((targetPara.pageNumber - 1) / PAGE_CHUNK_SIZE);
+        setPageChunkIndex(targetChunk);
+      }
+    }
+
     setTimeout(() => {
       const element = paragraphRefs.current[paragraphId];
       if (!element || !readerMainRef.current) return;
 
-      if (layoutMode === 'scroll') {
+      if (mode === 'scroll') {
         element.scrollIntoView({ behavior: 'auto', block: 'center' });
         return;
       }
@@ -663,7 +791,7 @@ function App() {
           const safePage = Math.min(currentPage, clampedTotal);
           if (safePage !== currentPage) setCurrentPage(safePage);
           readerMainRef.current.scrollTo({ left: (safePage - 1) * step, behavior: 'smooth' });
-          setTimeout(() => savePageModeProgress(safePage, clampedTotal), 350);
+          setTimeout(() => savePageModeProgress(), 350);
         }
       }
     };
@@ -682,7 +810,7 @@ function App() {
       if (resizeTimer) clearTimeout(resizeTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layoutMode, parsedPdf, fontSize, lineSpacing, fontFamily]);
+  }, [layoutMode, parsedPdf, fontSize, lineSpacing, fontFamily, pageChunkIndex]);
 
   // Navigare ABSOLUTĂ (scrollTo pe baza paginii țintă), nu relativă (scrollBy).
   const goToNextPage = () => {
@@ -694,7 +822,16 @@ function App() {
         setCurrentPage(next);
         readerMainRef.current.scrollTo({ left: (next - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((next / totalHorizontalPages) * 100));
-        setTimeout(() => savePageModeProgress(next, totalHorizontalPages), 350);
+        setTimeout(() => savePageModeProgress(), 350);
+      } else {
+        // Am ajuns la finalul bucatii randate - trecem la urmatoarea bucata
+        // de continut (daca mai exista), in loc sa fim blocati la "ultima
+        // pagina" cand de fapt cartea mai continua.
+        const maxChunk = Math.floor((parsedPdf.totalPages - 1) / PAGE_CHUNK_SIZE);
+        if (pageChunkIndex < maxChunk) {
+          setPageChunkIndex(c => c + 1);
+          setCurrentPage(1);
+        }
       }
     }
   };
@@ -708,7 +845,13 @@ function App() {
         setCurrentPage(prev);
         readerMainRef.current.scrollTo({ left: (prev - 1) * step, behavior: 'smooth' });
         setScrollPercentage(Math.round((prev / totalHorizontalPages) * 100));
-        setTimeout(() => savePageModeProgress(prev, totalHorizontalPages), 350);
+        setTimeout(() => savePageModeProgress(), 350);
+      } else if (pageChunkIndex > 0) {
+        // La inceputul bucatii curente - trecem la bucata anterioara si
+        // aterizam pe ULTIMA ei pagina (sentinel mare, clampat automat de
+        // efectul de recalculare cand bucata noua se randeaza).
+        setPageChunkIndex(c => c - 1);
+        setCurrentPage(Number.MAX_SAFE_INTEGER);
       }
     }
   };
@@ -739,6 +882,23 @@ function App() {
   // CLOSING THE READER
   // --------------------------------------------------------------------------
   const handleBackToDashboard = () => {
+    // Daca exista o salvare de progres in asteptare (debounce dupa scroll
+    // sau schimbare de pagina), o "golim"/executam IMEDIAT inainte sa
+    // parasim cartea. Altfel, daca dai scroll si apesi rapid "inapoi"
+    // (in mai putin de 150-350ms), salvarea programata ajunge sa ruleze
+    // DUPA ce activeBookId a fost deja sters -> se pierde silentios ultima
+    // pozitie, si la redeschidere te trimite cine stie unde (sau la inceput).
+    if (scrollSearchTimer.current) {
+      clearTimeout(scrollSearchTimer.current);
+      scrollSearchTimer.current = null;
+    }
+    if (layoutMode === 'scroll') {
+      const id = findVisibleParagraphId('scroll');
+      if (id) updateBookProgress(id, scrollPercentage);
+    } else {
+      savePageModeProgress();
+    }
+
     setParsedPdf(null);
     localStorage.removeItem('pdf_reader_active_book_id');
     setActiveBookId(null);
@@ -886,6 +1046,13 @@ function App() {
     if (fontFamily === 'sans') activeFontClass = 'var(--font-sans)';
     if (fontFamily === 'dyslexic') activeFontClass = 'var(--font-dyslexic)';
 
+    // In modul Coloane, randam DOAR paragrafele din bucata curenta de
+    // PAGE_CHUNK_SIZE pagini (nu toata cartea) - optimizare de performanta
+    // pentru carti mari (1000+ pagini). In modul Scroll, ramane neschimbat.
+    const visibleParagraphs = layoutMode === 'page'
+      ? parsedPdf.paragraphs.filter(p => Math.floor((p.pageNumber - 1) / PAGE_CHUNK_SIZE) === pageChunkIndex)
+      : parsedPdf.paragraphs;
+
     return (
       <div className="reader-wrapper">
         
@@ -902,7 +1069,7 @@ function App() {
                 <button 
                   className="btn btn-icon-only page-nav-mini-btn" 
                   onClick={goToPrevPage} 
-                  disabled={currentPage === 1}
+                  disabled={currentPage === 1 && pageChunkIndex === 0}
                   title="Pagina precedentă (Taste: Stânga / Sus)"
                 >
                   ◀
@@ -913,7 +1080,7 @@ function App() {
                 <button 
                   className="btn btn-icon-only page-nav-mini-btn" 
                   onClick={goToNextPage} 
-                  disabled={currentPage >= totalHorizontalPages}
+                  disabled={currentPage >= totalHorizontalPages && pageChunkIndex >= Math.floor((parsedPdf.totalPages - 1) / PAGE_CHUNK_SIZE)}
                   title="Pagina următoare (Taste: Space / Dreapta / Jos)"
                 >
                   ▶
@@ -968,7 +1135,7 @@ function App() {
                 '--line-spacing-active': lineSpacing,
               } as React.CSSProperties}
             >
-              {parsedPdf.paragraphs.map((p) => {
+              {visibleParagraphs.map((p) => {
                   return (
                     <div 
                       key={p.id}
@@ -1029,23 +1196,20 @@ function App() {
                   <button 
                     className={`btn ${layoutMode === 'scroll' ? 'btn-primary' : ''}`} 
                     onClick={() => {
+                      const currentId = findVisibleParagraphId(layoutMode);
                       setLayoutMode('scroll');
-                      setTimeout(() => {
-                        const activeP = parsedPdf.paragraphs.find(p => p.pageNumber === currentPage);
-                        if (activeP && readerMainRef.current) {
-                          const element = paragraphRefs.current[activeP.id];
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'auto', block: 'center' });
-                          }
-                        }
-                      }, 100);
+                      restoreReadingPosition(currentId, 100, 'scroll');
                     }}
                   >
                     📖 Scroll Clasic
                   </button>
                   <button 
                     className={`btn ${layoutMode === 'page' ? 'btn-primary' : ''}`} 
-                    onClick={() => setLayoutMode('page')}
+                    onClick={() => {
+                      const currentId = findVisibleParagraphId(layoutMode);
+                      setLayoutMode('page');
+                      restoreReadingPosition(currentId, 400, 'page');
+                    }}
                   >
                     📄 Pagini / Coloane
                   </button>
