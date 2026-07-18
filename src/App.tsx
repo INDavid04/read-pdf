@@ -1171,8 +1171,8 @@ function App() {
   const renderProfileModal = () => {
     if (!showProfileModal) return null;
     return (
-      <div className="modal-backdrop">
-        <div className="modal-content unified-settings-modal">
+      <div className="modal-backdrop" onClick={() => setShowProfileModal(false)}>
+        <div className="modal-content unified-settings-modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h3>⚙️ Setări & Personalizare</h3>
             <button className="btn btn-icon-only" onClick={() => setShowProfileModal(false)}>✕</button>
