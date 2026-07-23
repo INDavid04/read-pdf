@@ -25,6 +25,7 @@ export interface CloudBookMetadata {
   progressPercentage: number;
   lastActiveParagraphId: string | null;
   updatedAtMs: number; // Date.now() la ultima actualizare - ne spune care versiune (local/cloud) e mai recenta
+  coverImage?: string;
 }
 
 export interface CloudUserSettings {

@@ -25,6 +25,7 @@ interface BookMetadata {
   progressPercentage: number;
   lastActiveParagraphId: string | null;
   updatedAtMs: number;
+  coverImage?: string;
 }
 
 interface UserProfile {
@@ -189,6 +190,16 @@ function App() {
               restoreReadingPosition(p.id, 500, modeAtLoad, bookData);
             }
           }
+          if (bookData.coverImage && !metadata.coverImage) {
+            const updated = recentsList.map(b => {
+              if (b.id === id) {
+                return { ...b, coverImage: bookData.coverImage, updatedAtMs: Date.now() };
+              }
+              return b;
+            });
+            setRecentBooks(updated);
+            localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updated));
+          }
         }
       } else {
         localStorage.removeItem('pdf_reader_active_book_id');
@@ -343,6 +354,7 @@ function App() {
           {
             ...existingBook,
             lastReadDate: now,
+            coverImage: existingBook.coverImage || parsed.coverImage,
           },
           ...recentBooks.filter(b => b.id !== existingBook.id)
         ];
@@ -365,6 +377,7 @@ function App() {
           progressPercentage: 0,
           lastActiveParagraphId: parsed.paragraphs[0]?.id || null,
           updatedAtMs: Date.now(),
+          coverImage: parsed.coverImage,
         };
         updatedRecents = [newBook, ...recentBooks];
 
@@ -437,6 +450,24 @@ function App() {
             if (p) {
               if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
               restoreReadingPosition(p.id, 400, undefined, bookData);
+            }
+          }
+          if (bookData.coverImage && !metadata.coverImage) {
+            const updated = recentBooks.map(b => {
+              if (b.id === id) {
+                return { ...b, coverImage: bookData.coverImage, updatedAtMs: Date.now() };
+              }
+              return b;
+            });
+            setRecentBooks(updated);
+            localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updated));
+            if (cloudUser) {
+              const updatedMeta = updated.find(b => b.id === id);
+              if (updatedMeta) {
+                saveCloudBookMetadata(cloudUser.uid, updatedMeta).catch(e =>
+                  console.error('Eroare la sincronizarea cover-ului:', e)
+                );
+              }
             }
           }
         }
@@ -1013,8 +1044,12 @@ function App() {
                   >
                     ✕
                   </button>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                    <span className="card-icon">📄</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    {book.coverImage ? (
+                      <img src={book.coverImage} alt={book.title} className="card-cover-thumbnail" />
+                    ) : (
+                      <span className="card-icon">📄</span>
+                    )}
                     <span className="page-indicator-badge" style={{ opacity: 1, position: 'static' }}>
                       {book.totalPages} pagini
                     </span>

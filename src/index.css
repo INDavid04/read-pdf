@@ -476,6 +476,21 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--accent-color);
 }
 
+.card-cover-thumbnail {
+  width: 48px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.recent-card:hover .card-cover-thumbnail {
+  transform: scale(1.05) translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
 .card-details h4 {
   font-size: 1.05rem;
   margin-bottom: 0.25rem;

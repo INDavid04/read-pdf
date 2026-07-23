@@ -13,6 +13,7 @@ export interface ParsedPDF {
   title: string;
   paragraphs: Paragraph[];
   totalPages: number;
+  coverImage?: string; // thumbnail mic (JPEG, ~160px latime) generat din prima pagina
 }
 
 /**
@@ -176,11 +177,45 @@ export async function parsePdfFile(file: File, onProgress?: (progress: number) =
     console.warn("Failed to extract PDF title metadata", e);
   }
 
+  // Generam o coperta mica (thumbnail) din prima pagina, ca sa avem ceva
+  // vizual in loc de o iconita generica in lista de carti. Randam la
+  // dimensiune MICA direct (nu redimensionam o imagine mare dupa), ca sa nu
+  // coste memorie/timp inutil, si comprimam ca JPEG de calitate redusa -
+  // suficient pentru un thumbnail, dar mult mai usor de stocat/afisat.
+  let coverImage: string | undefined;
+  try {
+    coverImage = await renderCoverThumbnail(pdf);
+  } catch (e) {
+    console.warn("Failed to generate cover thumbnail", e);
+  }
+
   return {
     title,
     paragraphs,
     totalPages: numPages,
+    coverImage,
   };
+}
+
+/**
+ * Renders page 1 of the PDF at a small scale directly to a JPEG data URL,
+ * to use as a lightweight book-cover thumbnail.
+ */
+async function renderCoverThumbnail(pdf: pdfjsLib.PDFDocumentProxy, targetWidth = 160): Promise<string> {
+  const page = await pdf.getPage(1);
+  const unscaledViewport = page.getViewport({ scale: 1 });
+  const scale = targetWidth / unscaledViewport.width;
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+
+  await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+
+  return canvas.toDataURL('image/jpeg', 0.6);
 }
 
 /**
