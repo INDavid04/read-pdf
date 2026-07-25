@@ -1045,39 +1045,95 @@ function App() {
                   key={book.id} 
                   className="recent-card"
                   onClick={() => loadBookFromHistory(book.id)}
+                  style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}
                 >
-                  <button 
-                    className="delete-book-btn" 
-                    onClick={(e) => handleDeleteBook(e, book.id)}
-                    title="Șterge din istoric"
-                  >
-                    ✕
-                  </button>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                    {book.coverImage ? (
-                      <img src={book.coverImage} alt={book.title} className="card-cover-thumbnail" />
-                    ) : (
-                      <span className="card-icon">📄</span>
-                    )}
-                    <span className="page-indicator-badge" style={{ opacity: 1, position: 'static' }}>
-                      {book.totalPages} pagini
-                    </span>
+                  
+                  {/* RÂNDUL 1: Titlul cărții */}
+                  <div className="card-details" style={{ margin: 0 }}>
+                    <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, lineHeight: '1.4' }}>
+                      {book.title}
+                    </h4>
                   </div>
-                  <div className="card-details">
-                    <h4>{book.title}</h4>
-                    <p>{formatDateRange(book.createdAt, book.lastAccessedAt)}</p>
-                    <p style={{ marginTop: '0.25rem', fontWeight: 'bold', color: 'var(--accent-color)' }}>
-                      Progres: {book.progressPercentage}%
-                    </p>
-                    <div className="card-progress-bar-container">
+
+                  {/* RÂNDUL 2: Bara de progres */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.4rem' }}>
+                    <div className="card-progress-bar-container" style={{ margin: 0, flexGrow: 1 }}>
                       <div className="card-progress-bar" style={{ width: `${book.progressPercentage}%` }}></div>
                     </div>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--accent-color)', minWidth: '35px', textAlign: 'right' }}>
+                      {book.progressPercentage}%
+                    </span>
                   </div>
+
+                  {/* RÂNDUL 3: Imaginea + Coloana cu detalii unificate stilistic */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                    {book.coverImage ? (
+                      <img 
+                        src={book.coverImage} 
+                        alt={book.title} 
+                        className="card-cover-thumbnail" 
+                        style={{ width: '60px', height: '80px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0 }} 
+                      />
+                    ) : (
+                      <span className="card-icon" style={{ width: '60px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📄</span>
+                    )}
+                    
+                    {/* Coloana din dreapta: Pagini, Interval, Ștergere - Stil unitar */}
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '80px', flexGrow: 1 }}>
+                      
+                      {/* Interval date */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '1rem', color: 'var(--text-muted, #a1a1aa)' }}>
+                        <span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><title>time-fill</title><g fill="none"><path d="m12.593 23.258l-.011.002l-.071.035l-.02.004l-.014-.004l-.071-.035q-.016-.005-.024.005l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.017-.018m.265-.113l-.013.002l-.185.093l-.01.01l-.003.011l.018.43l.005.012l.008.007l.201.093q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.004-.011l.017-.43l-.003-.012l-.01-.01z"/><path fill="currentColor" d="M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12S6.477 2 12 2m0 4a1 1 0 0 0-1 1v5a1 1 0 0 0 .293.707l3 3a1 1 0 0 0 1.414-1.414L13 11.586V7a1 1 0 0 0-1-1"/></g></svg>
+                        </span>
+                        <span>{formatDateRange(book.createdAt, book.lastAccessedAt)}</span>
+                      </div>
+
+                      {/* Număr pagini */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '1rem', color: 'var(--text-muted, #a1a1aa)' }}>
+                        <span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512"><title>book</title><path fill="currentColor" d="M202.24 74C166.11 56.75 115.61 48.3 48 48a31.36 31.36 0 0 0-17.92 5.33A32 32 0 0 0 16 79.9V366c0 19.34 13.76 33.93 32 33.93c71.07 0 142.36 6.64 185.06 47a4.11 4.11 0 0 0 6.94-3V106.82a15.9 15.9 0 0 0-5.46-12A143 143 0 0 0 202.24 74m279.68-20.7A31.33 31.33 0 0 0 464 48c-67.61.3-118.11 8.71-154.24 26a143.3 143.3 0 0 0-32.31 20.78a15.93 15.93 0 0 0-5.45 12v337.13a3.93 3.93 0 0 0 6.68 2.81c25.67-25.5 70.72-46.82 185.36-46.81a32 32 0 0 0 32-32v-288a32 32 0 0 0-14.12-26.61"/></svg>
+                        </span>
+                        <span>{book.totalPages} pagini</span>
+                      </div>
+
+                      {/* Buton ștergere cu iconiță conturată */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                        <button 
+                          onClick={(e) => handleDeleteBook(e, book.id)}
+                          title="Șterge cartea din istoric"
+                          style={{ 
+                            background: 'transparent', 
+                            border: 'none', 
+                            color: 'var(--text-muted, #a1a1aa)', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.4rem', 
+                            fontSize: '1rem',
+                            padding: 0,
+                            transition: 'color 0.2s',
+                            fontFamily: 'var(--font-sans)'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #a1a1aa)'}
+                        >
+                          <span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><title>trash-bin-2-bold</title><path fill="currentColor" d="M2.75 6.167c0-.46.345-.834.771-.834h2.665c.529-.015.996-.378 1.176-.916l.03-.095l.115-.372c.07-.228.131-.427.217-.605c.338-.702.964-1.189 1.687-1.314c.184-.031.377-.031.6-.031h3.478c.223 0 .417 0 .6.031c.723.125 1.35.612 1.687 1.314c.086.178.147.377.217.605l.115.372l.03.095c.18.538.74.902 1.27.916h2.57c.427 0 .772.373.772.834S20.405 7 19.979 7H3.52c-.426 0-.771-.373-.771-.833M11.607 22h.787c2.707 0 4.06 0 4.941-.863c.88-.864.97-2.28 1.15-5.111l.26-4.081c.098-1.537.147-2.305-.295-2.792s-1.187-.487-2.679-.487H8.23c-1.491 0-2.237 0-2.679.487s-.392 1.255-.295 2.792l.26 4.08c.18 2.833.27 4.248 1.15 5.112S8.9 22 11.607 22"/></svg>
+                          </span>
+                          <span>Șterge cartea</span>
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+
                 </div>
               ))}
             </div>
           </section>
         )}
+
         </div>
       </>
     );
