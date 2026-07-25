@@ -38,10 +38,25 @@ export async function saveParsedPDF(id: string, pdf: ParsedPDF): Promise<void> {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.put({ id, ...pdf });
+      
+      // Preluăm obiectul existent pentru a nu suprascrie data adăugării inițiale
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const existingData = getReq.result;
+        const now = new Date().toISOString();
 
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+        const updatedPdf = {
+          id,
+          ...pdf,
+          createdAt: existingData?.createdAt || now, // Păstrăm data veche sau punem data curentă
+          lastAccessedAt: now, // Actualizăm mereu ultima accesare la momentul curent
+        };
+
+        const putReq = store.put(updatedPdf);
+        putReq.onerror = () => reject(putReq.error);
+        putReq.onsuccess = () => resolve();
+      };
+      getReq.onerror = () => reject(getReq.error);
     });
   } catch (error) {
     console.error('Failed to save parsed PDF to database:', error);

@@ -21,11 +21,12 @@ export interface CloudBookMetadata {
   id: string;
   title: string;
   totalPages: number;
-  lastReadDate: string;
   progressPercentage: number;
   lastActiveParagraphId: string | null;
-  updatedAtMs: number; // Date.now() la ultima actualizare - ne spune care versiune (local/cloud) e mai recenta
+  updatedAtMs: number;
   coverImage?: string;
+  createdAt?: string;
+  lastAccessedAt?: string;
 }
 
 export interface CloudUserSettings {

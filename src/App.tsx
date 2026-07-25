@@ -21,11 +21,12 @@ interface BookMetadata {
   id: string;
   title: string;
   totalPages: number;
-  lastReadDate: string;
   progressPercentage: number;
   lastActiveParagraphId: string | null;
   updatedAtMs: number;
   coverImage?: string;
+  createdAt?: string;
+  lastAccessedAt?: string;
 }
 
 interface UserProfile {
@@ -339,21 +340,16 @@ function App() {
       // Check if this book title is already in recent books list to restore progress
       const existingBook = recentBooks.find(b => b.title === parsed.title);
       
-      const now = new Date().toLocaleDateString('ro-RO', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+      const now = new Date().toISOString();
+      const nowMs = Date.now();
 
       let updatedRecents: BookMetadata[] = [];
       if (existingBook) {
-        // Move to the top of list, reuse ID to avoid duplicate store entries
         updatedRecents = [
           {
             ...existingBook,
-            lastReadDate: now,
+            lastAccessedAt: now,          // Actualizăm data ultimei accesări
+            updatedAtMs: nowMs,           // Actualizăm timestamp-ul numeric
             coverImage: existingBook.coverImage || parsed.coverImage,
           },
           ...recentBooks.filter(b => b.id !== existingBook.id)
@@ -363,37 +359,21 @@ function App() {
         localStorage.setItem('pdf_reader_active_book_id', existingBook.id);
         setParsedPdf(parsed);
 
-        // Delete the redundant newly generated DB entry since we reuse the existing one
         await deleteParsedPDF(bookId);
-
-        // Restore position
         restoreReadingPosition(existingBook.lastActiveParagraphId, 500, undefined, parsed);
       } else {
         const newBook: BookMetadata = {
           id: bookId,
           title: parsed.title,
           totalPages: parsed.totalPages,
-          lastReadDate: now,
           progressPercentage: 0,
           lastActiveParagraphId: parsed.paragraphs[0]?.id || null,
-          updatedAtMs: Date.now(),
+          updatedAtMs: nowMs,
+          createdAt: now,                 // Setăm data adăugării inițiale
+          lastAccessedAt: now,            // Setăm și ultima accesare la momentul curent
           coverImage: parsed.coverImage,
         };
         updatedRecents = [newBook, ...recentBooks];
-
-        // Increment total parsed books count in profile
-        const updatedProfile = {
-          ...userProfile,
-          totalBooksParsed: userProfile.totalBooksParsed + 1
-        };
-        setUserProfile(updatedProfile);
-        localStorage.setItem('pdf_reader_profile', JSON.stringify(updatedProfile));
-
-        setActiveBookId(bookId);
-        localStorage.setItem('pdf_reader_active_book_id', bookId);
-        setParsedPdf(parsed);
-        setCurrentPage(1);
-        setScrollPercentage(0);
       }
 
       setRecentBooks(updatedRecents);
@@ -941,6 +921,35 @@ function App() {
     return isDefault ? 'Salut, Cititorule!' : `Salut, ${userProfile.name}!`;
   };
 
+  // Functie de formatare a intervalului de citire a unei carti si afisare in ui
+  const formatDateRange = (createdAt?: string, lastAccessedAt?: string): string => {
+    if (!createdAt) return '';
+    
+    const start = new Date(createdAt);
+    const end = lastAccessedAt ? new Date(lastAccessedAt) : new Date();
+
+    const optionsStart: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: start.getFullYear() !== end.getFullYear() ? 'numeric' : undefined 
+    };
+    
+    const optionsEnd: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    };
+
+    const formattedStart = start.toLocaleDateString('ro-RO', optionsStart);
+    const formattedEnd = end.toLocaleDateString('ro-RO', optionsEnd);
+
+    if (formattedStart === formattedEnd) {
+      return formattedEnd;
+    }
+
+    return `${formattedStart} – ${formattedEnd}`;
+  };
+
   // --------------------------------------------------------------------------
   // RENDER SECTIONS
   // --------------------------------------------------------------------------
@@ -1056,7 +1065,7 @@ function App() {
                   </div>
                   <div className="card-details">
                     <h4>{book.title}</h4>
-                    <p>Ultima accesare: {book.lastReadDate}</p>
+                    <p>{formatDateRange(book.createdAt, book.lastAccessedAt)}</p>
                     <p style={{ marginTop: '0.25rem', fontWeight: 'bold', color: 'var(--accent-color)' }}>
                       Progres: {book.progressPercentage}%
                     </p>
