@@ -219,11 +219,13 @@ async function renderCoverThumbnail(pdf: pdfjsLib.PDFDocumentProxy, targetWidth 
 }
 
 /**
- * Clean up text anomalies like multiple spaces, weird hyphens, or spacing characters.
+ * Clean up basic text anomalies like multiple spaces or invisible characters.
  */
 function cleanText(text: string): string {
   return text
-    .replace(/\s+/g, ' ') // Replace multiple consecutive whitespaces with a single space
-    .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces
+    // 1. Înlocuiește spațiile multiple consecutive cu un singur spațiu
+    .replace(/\s+/g, ' ')
+    // 2. Curăță caracterele invizibile sau zero-width
+    .replace(/[\u200B-\u200D\uFEFF]/g, '') 
     .trim();
 }

@@ -3,6 +3,7 @@ import { parsePdfFile } from './utils/pdfParser';
 import type { ParsedPDF } from './utils/pdfParser';
 import { renderBionicParagraph } from './utils/bionic';
 import { saveParsedPDF, getParsedPDF, deleteParsedPDF } from './utils/db';
+import { smartCleanParagraphsWithAI } from './utils/aiCleaner';
 import {
   signInWithGoogle,
   signOutUser,
@@ -95,6 +96,11 @@ function App() {
   // acestea sa apuce sa fie citite si afisate. De-asta parea ca "nimic nu se
   // salveaza" desi salvarea propriu-zisa functiona corect.
   const [hasHydrated, setHasHydrated] = useState(false);
+
+  // --- AI CLEANER STATE ---
+  const isCleaningRef = useRef(false);
+  const [isAiCleaning, setIsAiCleaning] = useState(false);
+  const [aiCleanProgress, setAiCleanProgress] = useState(0);
 
   // --------------------------------------------------------------------------
   // INITIAL LOADING & SYNC LOGIC
@@ -950,6 +956,75 @@ function App() {
     return `${formattedStart} – ${formattedEnd}`;
   };
 
+  // Funcția inteligentă de Start / Stop cu reluare de unde a rămas
+  const handleToggleAICleanup = async () => {
+    if (isAiCleaning) {
+      isCleaningRef.current = false;
+      setIsAiCleaning(false);
+      return;
+    }
+
+    if (!parsedPdf || !activeBookId) return;
+    
+    let currentParagraphs = parsedPdf.paragraphs;
+    
+    // Preluăm indexul de unde a rămas data trecută (salvat în obiectul cărții) sau de la 0
+    let startIndex = (parsedPdf as any).lastCleanedIndex || 0;
+    
+    if (startIndex >= currentParagraphs.length) {
+      if (confirm("Cartea pare deja curățată integral. Vrei să o iei de la capăt?")) {
+        startIndex = 0;
+      } else {
+        return;
+      }
+    }
+
+    let hasMore = startIndex < currentParagraphs.length;
+
+    isCleaningRef.current = true;
+    setIsAiCleaning(true);
+
+    try {
+      while (hasMore && isCleaningRef.current) {
+        // Procesăm în loturi de 30 de paragrafe (optim pentru viteză și limitele API)
+        const result = await smartCleanParagraphsWithAI(currentParagraphs, startIndex, 30);
+        
+        if (!isCleaningRef.current) break; // Dacă utilizatorul a apăsat Oprește
+
+        currentParagraphs = result.updatedParagraphs;
+        startIndex = result.nextIndex;
+        hasMore = result.hasMore;
+
+        const progressPercent = Math.round((startIndex / currentParagraphs.length) * 100);
+        setAiCleanProgress(progressPercent);
+
+        // Salvăm progresul local (IndexedDB / Cloud) incluzând și ultimul index procesat
+        const updatedParsed = { 
+          ...parsedPdf, 
+          paragraphs: currentParagraphs,
+          lastCleanedIndex: startIndex 
+        };
+        setParsedPdf(updatedParsed);
+        await saveParsedPDF(activeBookId, updatedParsed);
+        
+        // ⏳ Pauză de 3 secunde între loturi ca să respectăm limita de rate (15 RPM)
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+      
+      if (!isCleaningRef.current) {
+        console.log(`Proces oprit de utilizator la indexul ${startIndex}. Progresul a fost salvat.`);
+      } else {
+        alert('✨ Cartea a fost curățată complet și impecabil cu AI!');
+      }
+    } catch (error) {
+      console.error('Eroare la curățarea cu AI:', error);
+      alert('A apărut o eroare în timpul curățării cu AI. Verifică consola.');
+    } finally {
+      isCleaningRef.current = false;
+      setIsAiCleaning(false);
+    }
+  };
+
   // --------------------------------------------------------------------------
   // RENDER SECTIONS
   // --------------------------------------------------------------------------
@@ -1393,7 +1468,7 @@ function App() {
               </div>
             </div>
 
-            {/* 5. Font Style Selector & Line Spacing */}
+            {/* 5. Line Spacing */}
             <div className="settings-section">
               <span className="settings-label">Distanțiere Linii</span>
               <div className="choice-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -1421,6 +1496,7 @@ function App() {
               </div>
             </div>
 
+            {/* 6. Font Style Selector */}
             <div className="settings-section">
               <span className="settings-label">Tip Font Text</span>
               <div className="font-family-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
@@ -1448,7 +1524,26 @@ function App() {
               </div>
             </div>
 
-            {/* 6. Statistics / Info tag */}
+            {/* 7. Secțiunea de Curățare Tipografică cu AI */}
+            {parsedPdf && (
+              <div className="settings-section">
+                <span className="settings-label">Corectare Tipografică Text (AI)</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button 
+                    className={`btn ${isAiCleaning ? 'btn-danger' : 'btn-primary'}`} 
+                    onClick={handleToggleAICleanup}
+                    style={{ width: '100%' }}
+                  >
+                    {isAiCleaning ? `⏹️ Oprește Curățarea (${aiCleanProgress}%)` : '✨ Curăță Cartea cu Gemini AI'}
+                  </button>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                    {isAiCleaning ? 'Procesul rulează. Poți opri oricând.' : 'Repară automat cuvintele rupte, spațiile și antetele.'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 8. Statistics / Info tag */}
             <div className="settings-stats-footer" style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
               <span className="stats-tag" style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
                 📚 {userProfile.totalBooksParsed} Cărți
