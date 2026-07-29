@@ -10,7 +10,7 @@ export async function smartCleanParagraphsWithAI(paragraphs: Paragraph[], startI
   const textsToClean = batch.map(p => p.text);
 
   const prompt = `
-Ești un corector tipografic expert în limba română. 
+Ești un corector tipografic expert în limba română sau in limba engleza, depinde de textul pus la dispozitie. 
 Corectează erorile de parsare dintr-un PDF (cuvinte despărțite greșit de cratime, spații anormale între litere, numere de pagină sau antete rătăcite).
 REGULI STRICTE:
 1. Nu schimba sensul și nu rescrie stilul autorului.
