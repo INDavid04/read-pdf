@@ -891,20 +891,6 @@ function App() {
   };
 
   // --------------------------------------------------------------------------
-  // USER PROFILE SAVE LOGIC
-  // --------------------------------------------------------------------------
-  const saveProfile = () => {
-    if (tempProfileName.trim() === '') return;
-    const updated = {
-      ...userProfile,
-      name: tempProfileName.trim()
-    };
-    setUserProfile(updated);
-    localStorage.setItem('pdf_reader_profile', JSON.stringify(updated));
-    setShowProfileModal(false);
-  };
-
-  // --------------------------------------------------------------------------
   // CLOSING THE READER
   // --------------------------------------------------------------------------
   const handleBackToDashboard = () => {
