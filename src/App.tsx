@@ -1342,7 +1342,7 @@ function App() {
     );
   };
 
-  // Unified Settings Modal Dialog
+  // Unified Settings Modal Dialog (Curățat de butoane inutile & mai aerisit)
   const renderProfileModal = () => {
     if (!showProfileModal) return null;
     return (
@@ -1350,12 +1350,11 @@ function App() {
         <div className="modal-content unified-settings-modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h3>⚙️ Setări & Personalizare</h3>
-            <button className="btn btn-icon-only" onClick={() => setShowProfileModal(false)}>✕</button>
           </div>
           
-          <div className="modal-body">
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* 1. Name input */}
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="user-name-input">Numele Tău de Cititor</label>
               <input 
                 id="user-name-input"
@@ -1369,9 +1368,9 @@ function App() {
 
             {/* 2. Layout Mode Selector */}
             {parsedPdf && (
-              <div className="settings-section">
+              <div className="settings-section" style={{ marginBottom: 0 }}>
                 <span className="settings-label">Mod Vizualizare Document</span>
-                <div className="choice-grid">
+                <div className="choice-grid" style={{ marginTop: '0.5rem' }}>
                   <button 
                     className={`btn ${layoutMode === 'scroll' ? 'btn-primary' : ''}`} 
                     onClick={() => {
@@ -1397,9 +1396,9 @@ function App() {
             )}
 
             {/* 3. Theme Selector */}
-            <div className="settings-section">
+            <div className="settings-section" style={{ marginBottom: 0 }}>
               <span className="settings-label">Tema de Lectură</span>
-              <div className="theme-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem' }}>
+              <div className="theme-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <button 
                   className={`theme-btn theme-btn-sepia ${theme === 'sepia' ? 'active' : ''}`} 
                   onClick={() => setTheme('sepia')}
@@ -1439,10 +1438,10 @@ function App() {
             </div>
 
             {/* 4. Text Size & Line spacing in grid */}
-            <div className="settings-grid-2col">
-              <div className="settings-section">
+            <div className="settings-grid-2col" style={{ marginBottom: 0 }}>
+              <div className="settings-section" style={{ marginBottom: 0 }}>
                 <span className="settings-label">Dimensiune Text ({fontSize}px)</span>
-                <div className="font-size-controls">
+                <div className="font-size-controls" style={{ marginTop: '0.5rem' }}>
                   <button className="btn font-size-btn" onClick={() => {
                     const currentIndex = FONT_SIZES.indexOf(fontSize);
                     if (currentIndex > 0) setFontSize(FONT_SIZES[currentIndex - 1]);
@@ -1456,12 +1455,12 @@ function App() {
                 </div>
               </div>
 
-              <div className="settings-section">
+              <div className="settings-section" style={{ marginBottom: 0 }}>
                 <span className="settings-label">Citire Bionică</span>
                 <button 
                   className={`btn ${isBionic ? 'btn-primary' : ''}`} 
                   onClick={toggleBionic}
-                  style={{ width: '100%', height: '38px' }}
+                  style={{ width: '100%', height: '38px', marginTop: '0.5rem' }}
                 >
                   {isBionic ? '🧠 Activată' : 'Dezactivată'}
                 </button>
@@ -1469,9 +1468,9 @@ function App() {
             </div>
 
             {/* 5. Line Spacing */}
-            <div className="settings-section">
+            <div className="settings-section" style={{ marginBottom: 0 }}>
               <span className="settings-label">Distanțiere Linii</span>
-              <div className="choice-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+              <div className="choice-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginTop: '0.5rem' }}>
                 <button 
                   className={`btn ${lineSpacing === 1.4 ? 'btn-primary' : ''}`} 
                   onClick={() => setLineSpacing(1.4)}
@@ -1497,9 +1496,9 @@ function App() {
             </div>
 
             {/* 6. Font Style Selector */}
-            <div className="settings-section">
+            <div className="settings-section" style={{ marginBottom: 0 }}>
               <span className="settings-label">Tip Font Text</span>
-              <div className="font-family-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+              <div className="font-family-selector" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <button 
                   className={`btn ${fontFamily === 'serif' ? 'btn-primary' : ''}`} 
                   onClick={() => setFontFamily('serif')}
@@ -1526,9 +1525,9 @@ function App() {
 
             {/* 7. Secțiunea de Curățare Tipografică cu AI */}
             {parsedPdf && (
-              <div className="settings-section">
+              <div className="settings-section" style={{ marginBottom: 0 }}>
                 <span className="settings-label">Corectare Tipografică Text (AI)</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
                   <button 
                     className={`btn ${isAiCleaning ? 'btn-danger' : 'btn-primary'}`} 
                     onClick={handleToggleAICleanup}
@@ -1555,11 +1554,6 @@ function App() {
                 🎨 Temă: {theme}
               </span>
             </div>
-          </div>
-
-          <div className="modal-footer">
-            <button className="btn" onClick={() => setShowProfileModal(false)}>Anulează</button>
-            <button className="btn btn-primary" onClick={saveProfile}>Salvează & Aplică</button>
           </div>
         </div>
       </div>
