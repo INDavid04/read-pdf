@@ -134,6 +134,19 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--text-muted);
 }
 
+/* Select text */
+/* Stilul general pentru selecția textului */
+::selection {
+  background-color: var(--accent-color); /* sau numele variabilei tale de accent, ex: var(--color-primary) */
+  color: var(--text-primary, #ffffff); /* Culoarea textului de deasupra selecției */
+}
+
+/* Unele browsere (Firefox) folosesc uneori o scriere specifică, o poți adaugă opțional */
+::-moz-selection {
+  background-color: var(--accent-color);
+  color: var(--text-primary, #ffffff);
+}
+
 /* Root Layout Container */
 #root {
   min-height: 100vh;
