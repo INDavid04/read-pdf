@@ -100,7 +100,7 @@ function App() {
   // --- AI CLEANER STATE ---
   const isCleaningRef = useRef(false);
   const [isAiCleaning, setIsAiCleaning] = useState(false);
-  const [aiCleanProgress, setAiCleanProgress] = useState(0);
+  const [aiCleanStatus, setAiCleanStatus] = useState<string>('0 / 0');
 
   // --- LOADING SCREEN STATE ---
   const [isAppLoading, setIsAppLoading] = useState(true);
@@ -985,7 +985,7 @@ function App() {
     return `${formattedStart} – ${formattedEnd}`;
   };
 
-  // Funcția inteligentă de Start / Stop cu reluare de unde a rămas
+  // Funcția inteligentă de Start / Stop cu reluare de unde a rămas a corectarii tipografice
   const handleToggleAICleanup = async () => {
     if (isAiCleaning) {
       isCleaningRef.current = false;
@@ -996,11 +996,10 @@ function App() {
     if (!parsedPdf || !activeBookId) return;
     
     let currentParagraphs = parsedPdf.paragraphs;
-    
-    // Preluăm indexul de unde a rămas data trecută (salvat în obiectul cărții) sau de la 0
     let startIndex = (parsedPdf as any).lastCleanedIndex || 0;
+    const totalParagraphs = currentParagraphs.length;
     
-    if (startIndex >= currentParagraphs.length) {
+    if (startIndex >= totalParagraphs) {
       if (confirm("Cartea pare deja curățată integral. Vrei să o iei de la capăt?")) {
         startIndex = 0;
       } else {
@@ -1008,26 +1007,48 @@ function App() {
       }
     }
 
-    let hasMore = startIndex < currentParagraphs.length;
+    let hasMore = startIndex < totalParagraphs;
 
     isCleaningRef.current = true;
     setIsAiCleaning(true);
+    setAiCleanStatus(`${startIndex} / ${totalParagraphs}`);
 
     try {
       while (hasMore && isCleaningRef.current) {
-        // Procesăm în loturi de 30 de paragrafe (optim pentru viteză și limitele API)
-        const result = await smartCleanParagraphsWithAI(currentParagraphs, startIndex, 30);
+        const targetIndex = Math.min(startIndex + 30, totalParagraphs);
+
+        // 🚀 Facem o creștere vizuală lină (din aproape în aproape) până la următorul batch
+        const animateProgress = async (from: number, to: number) => {
+          let current = from;
+          while (current < to && isCleaningRef.current) {
+            current++;
+            setAiCleanStatus(`${current} / ${totalParagraphs}`);
+            // Interval mic între pași ca să pară natural (ex: 100ms pe paragraf)
+            await new Promise(r => setTimeout(r, 100)); 
+          }
+        };
+
+        // Pornim animația vizuală în paralel cu cererea la AI
+        const animationPromise = animateProgress(startIndex, targetIndex);
+
+        const result = await smartCleanParagraphsWithAI(
+          currentParagraphs, 
+          startIndex, 
+          30, 
+          (processed, total) => {
+            setAiCleanStatus(`${processed} / ${total}`);
+          }
+        );
         
-        if (!isCleaningRef.current) break; // Dacă utilizatorul a apăsat Oprește
+        // Ne asigurăm că animația s-a terminat sau sincronizăm exact cu rezultatul real
+        await animationPromise;
+
+        if (!isCleaningRef.current) break;
 
         currentParagraphs = result.updatedParagraphs;
         startIndex = result.nextIndex;
         hasMore = result.hasMore;
 
-        const progressPercent = Math.round((startIndex / currentParagraphs.length) * 100);
-        setAiCleanProgress(progressPercent);
-
-        // Salvăm progresul local (IndexedDB / Cloud) incluzând și ultimul index procesat
         const updatedParsed = { 
           ...parsedPdf, 
           paragraphs: currentParagraphs,
@@ -1036,12 +1057,12 @@ function App() {
         setParsedPdf(updatedParsed);
         await saveParsedPDF(activeBookId, updatedParsed);
         
-        // ⏳ Pauză de 3 secunde între loturi ca să respectăm limita de rate (15 RPM)
+        // Pauza de 3 secunde cerută de rate limit
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
       
       if (!isCleaningRef.current) {
-        console.log(`Proces oprit de utilizator la indexul ${startIndex}. Progresul a fost salvat.`);
+        console.log(`Proces oprit de utilizator la paragraful ${startIndex}. Progresul a fost salvat.`);
       } else {
         alert('✨ Cartea a fost curățată complet și impecabil cu AI!');
       }
@@ -1562,7 +1583,7 @@ function App() {
                     onClick={handleToggleAICleanup}
                     style={{ width: '100%' }}
                   >
-                    {isAiCleaning ? `⏹️ Oprește Curățarea (${aiCleanProgress}%)` : '✨ Curăță Cartea cu Gemini AI'}
+                    {isAiCleaning ? `⏹️ Oprește Curățarea (${aiCleanStatus} paragrafe)` : '✨ Curăță Cartea cu Gemini AI'}
                   </button>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
                     {isAiCleaning ? 'Procesul rulează. Poți opri oricând.' : 'Repară automat cuvintele rupte, spațiile și antetele.'}
