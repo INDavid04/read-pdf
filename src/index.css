@@ -640,6 +640,9 @@ h1, h2, h3, h4, h5, h6 {
   right: 1.5rem;
   top: 5rem;
   width: 320px;
+  max-height: calc(100vh - 7rem); /* 🚀 1. Limitează înălțimea să nu iasă din ecran pe telefon */
+  overflow-y: auto;               /* 🚀 2. Activează scroll-ul intern când e prea lung */
+  -webkit-overflow-scrolling: touch; /* 🚀 3. Asigură scroll fluid pe dispozitivele iOS */
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
