@@ -104,6 +104,7 @@ function App() {
 
   // --- LOADING SCREEN STATE ---
   const [isAppLoading, setIsAppLoading] = useState(true);
+  const [isOpeningBook, setIsOpeningBook] = useState(false);
 
   // --------------------------------------------------------------------------
   // INITIAL LOADING & SYNC LOGIC
@@ -188,8 +189,6 @@ function App() {
   }, []);
 
   const loadBookOnStartup = async (id: string, recentsList: BookMetadata[], modeAtLoad: 'scroll' | 'page') => {
-    setIsParsing(true);
-    setParseProgress(0);
     try {
       const bookData = await getParsedPDF(id);
       if (bookData) {
@@ -223,8 +222,6 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to load active book on startup', e);
-    } finally {
-      setIsParsing(false);
     }
   };
 
@@ -342,19 +339,36 @@ function App() {
     setIsParsing(true);
     setParseProgress(0);
 
+    let parsed: ParsedPDF | null = null;
+
     try {
-      const parsed = await parsePdfFile(uploadedFile, (progress) => {
+      // 1. Parsarea PDF-ului (aici crește progress bar-ul de la 0 la 100%)
+      parsed = await parsePdfFile(uploadedFile, (progress) => {
         setParseProgress(progress);
       });
+    } catch (e) {
+      console.error(e);
+      alert('A apărut o eroare la procesarea documentului PDF. Asigură-te că fișierul nu este securizat sau corupt.');
+      setIsParsing(false);
+      setParseProgress(0);
+      return;
+    } finally {
+      // Oprim ecranul de parsare cu bară de progres, deoarece parsarea brută s-a terminat
+      setIsParsing(false);
+      setParseProgress(0);
+    }
 
+    // 2. Acum activăm ecranul curat de loading (cel de la istoric, "Se deschide cartea...") 
+    // pentru partea de salvare și pregătire a interfeței!
+    setIsOpeningBook(true); 
+
+    try {
       const bookId = `book-${Date.now()}`;
       
-      // Save full parsed PDF to IndexedDB for quick persistent loading
+      // Salvez în IndexedDB
       await saveParsedPDF(bookId, parsed);
 
-      // Check if this book title is already in recent books list to restore progress
       const existingBook = recentBooks.find(b => b.title === parsed.title);
-      
       const now = new Date().toISOString();
       const nowMs = Date.now();
 
@@ -363,8 +377,8 @@ function App() {
         updatedRecents = [
           {
             ...existingBook,
-            lastAccessedAt: now,          // Actualizăm data ultimei accesări
-            updatedAtMs: nowMs,           // Actualizăm timestamp-ul numeric
+            lastAccessedAt: now,          
+            updatedAtMs: nowMs,           
             coverImage: existingBook.coverImage || parsed.coverImage,
           },
           ...recentBooks.filter(b => b.id !== existingBook.id)
@@ -384,45 +398,47 @@ function App() {
           progressPercentage: 0,
           lastActiveParagraphId: parsed.paragraphs[0]?.id || null,
           updatedAtMs: nowMs,
-          createdAt: now,                 // Setăm data adăugării inițiale
-          lastAccessedAt: now,            // Setăm și ultima accesare la momentul curent
+          createdAt: now,                 
+          lastAccessedAt: now,            
           coverImage: parsed.coverImage,
         };
         updatedRecents = [newBook, ...recentBooks];
+
+        setActiveBookId(bookId);
+        localStorage.setItem('pdf_reader_active_book_id', bookId);
+        setParsedPdf(parsed);
       }
 
       setRecentBooks(updatedRecents);
       localStorage.setItem('pdf_reader_recent_books', JSON.stringify(updatedRecents));
 
-      // Urcam cartea completa in cloud daca userul e autentificat, ca sa fie
-      // disponibila si pe celelalte device-uri fara sa o reincarce manual.
       if (cloudUser) {
         const savedMeta = updatedRecents.find(b => b.id === (existingBook ? existingBook.id : bookId));
         if (savedMeta) {
           setIsSyncing(true);
-          // updatedAtMs poate lipsi la carti mai vechi (adaugate inainte de acest
-          // camp) - punem un fallback ca sa satisfacem tipul cerut de upload.
           uploadFullBookToCloud(cloudUser.uid, { ...savedMeta, updatedAtMs: savedMeta.updatedAtMs ?? Date.now() }, parsed)
             .catch(e => console.error('Eroare la urcarea cartii in cloud:', e))
             .finally(() => setIsSyncing(false));
         }
       }
 
+      // O mică pauză de tranziție ca să fie totul fluid
+      await new Promise(resolve => setTimeout(resolve, 200));
+
     } catch (e) {
       console.error(e);
-      alert('A apărut o eroare la procesarea documentului PDF. Asigură-te că fișierul nu este securizat sau corupt.');
-      setIsParsing(false);
+      alert('A apărut o eroare la salvarea documentului.');
+    } finally {
+      // 3. Închidem definitiv ecranul de "Se deschide cartea..." când totul e gata
+      setIsOpeningBook(false);
     }
   };
 
   const loadBookFromHistory = async (id: string) => {
-    setIsParsing(true);
-    setParseProgress(0);
+    setIsOpeningBook(true);
     try {
       let bookData = await getParsedPDF(id);
 
-      // Daca nu exista local (ex: pe un device nou, dupa sincronizare), o luam
-      // din cloud si o salvam local pentru acces rapid data viitoare.
       if (!bookData && cloudUser) {
         setIsSyncing(true);
         bookData = await downloadBookContent(cloudUser.uid, id);
@@ -444,9 +460,25 @@ function App() {
             const p = bookData.paragraphs.find(par => par.id === metadata.lastActiveParagraphId);
             if (p) {
               if (layoutMode === 'scroll') setCurrentPage(p.pageNumber);
-              restoreReadingPosition(p.id, 400, undefined, bookData);
+              
+              // 🚀 Pune un setTimeout mic aici ca DOM-ul să apuce să randeze cartea 
+              // înainte să încerce să facă scroll la paragraful respectiv
+              setTimeout(() => {
+                try {
+                  restoreReadingPosition(p.id, 400, undefined, bookData);
+                } catch (err) {
+                  console.warn("Nu s-a putut restabili poziția exactă:", err);
+                } finally {
+                  setIsOpeningBook(false); // Oprește loading-ul aici sigur!
+                }
+              }, 100);
+            } else {
+              setIsOpeningBook(false);
             }
+          } else {
+            setIsOpeningBook(false);
           }
+
           if (bookData.coverImage && !metadata.coverImage) {
             const updated = recentBooks.map(b => {
               if (b.id === id) {
@@ -465,15 +497,17 @@ function App() {
               }
             }
           }
+        } else {
+          setIsOpeningBook(false);
         }
       } else {
         alert('Cartea selectată nu a fost găsită nici local, nici în cloud.');
+        setIsOpeningBook(false);
       }
     } catch (error) {
       console.error(error);
       alert('A apărut o eroare la încărcarea cărții.');
-    } finally {
-      setIsParsing(false);
+      setIsOpeningBook(false);
     }
   };
 
@@ -1562,6 +1596,14 @@ function App() {
         <div className="app-startup-overlay">
           <div className="bionic-spinner"></div>
           <p>Se pregătește biblioteca ta...</p>
+        </div>
+      )}
+
+      {/* 🚀 Ecranul de încărcare la deschiderea unei carti */}
+      {isOpeningBook && (
+        <div className="bionic-loading-overlay">
+          <div className="bionic-spinner"></div>
+          <p>Se deschide cartea...</p>
         </div>
       )}
 
