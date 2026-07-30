@@ -102,6 +102,9 @@ function App() {
   const [isAiCleaning, setIsAiCleaning] = useState(false);
   const [aiCleanProgress, setAiCleanProgress] = useState(0);
 
+  // --- LOADING SCREEN STATE ---
+  const [isAppLoading, setIsAppLoading] = useState(true);
+
   // --------------------------------------------------------------------------
   // INITIAL LOADING & SYNC LOGIC
   // --------------------------------------------------------------------------
@@ -176,6 +179,12 @@ function App() {
     // de mai jos vor rula din nou dupa ce randarea reflecta aceste valori,
     // in loc sa scrie in localStorage valorile default de dinainte de incarcare.
     setHasHydrated(true);
+
+    const timer = setTimeout(() => {
+      setIsAppLoading(false);
+    }, 400); // O mică întârziere fină de 0.4s ca să fie tranziția lină
+
+    return () => clearTimeout(timer);
   }, []);
 
   const loadBookOnStartup = async (id: string, recentsList: BookMetadata[], modeAtLoad: 'scroll' | 'page') => {
@@ -1562,6 +1571,15 @@ function App() {
 
   return (
     <>
+      {/* 🚀 Ecranul de încărcare la pornire/refresh */}
+      {isAppLoading && (
+        <div className="app-startup-overlay">
+          <div className="bionic-spinner"></div>
+          <p>Se pregătește biblioteca ta...</p>
+        </div>
+      )}
+
+      {/* 🚀 Ecranul de încărcare la citire bionica */}
       {parsedPdf ? renderReader() : renderDashboard()}
       {renderProfileModal()}
       {isProcessingBionic && (
